@@ -176,6 +176,14 @@ async function processFiles(files) {
             useLocation: hasCoordinates,
           },
         })
+
+        if (hasCoordinates) {
+          emit('geolocation-detected', {
+            index,
+            latitude: exif.latitude,
+            longitude: exif.longitude,
+          })
+        }
       } catch (err) {
         console.error(`Erro ao processar ${file.name}:`, err)
       }
@@ -322,6 +330,24 @@ defineExpose({
     uploadedPhotos.value = []
     error.value = ''
     emitPhotosChanged()
+
+    const firstExistingGeo = existingPhotos.value.find((item) => {
+      const image = item.image
+      return (
+        image &&
+        typeof image === 'object' &&
+        Number.isFinite(image.geoLocation?.latitude) &&
+        Number.isFinite(image.geoLocation?.longitude)
+      )
+    })
+
+    if (firstExistingGeo) {
+      emit('geolocation-detected', {
+        index: 0,
+        latitude: firstExistingGeo.image.geoLocation.latitude,
+        longitude: firstExistingGeo.image.geoLocation.longitude,
+      })
+    }
   },
   clear: () => {
     existingPhotos.value = []

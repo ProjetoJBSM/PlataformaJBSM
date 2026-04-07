@@ -37,11 +37,8 @@
       <div v-if="photos.length > 1" class="gallery-badge">
         {{ previewPhotoIndex + 1 }} / {{ photos.length }}
       </div>
-    </div>
 
-    <details class="gallery-thumbs-details" v-if="photos.length > 1">
-      <summary>Ver {{ photos.length }} fotos</summary>
-      <div class="gallery-thumbs">
+      <div v-if="photos.length > 1" class="gallery-thumbs-strip" aria-label="Miniaturas da galeria">
         <button
           v-for="(photo, idx) in photos"
           :key="idx"
@@ -49,12 +46,12 @@
           class="gallery-thumb"
           :class="{ active: idx === previewPhotoIndex }"
           :aria-label="`Foto ${idx + 1}`"
-          @click.prevent="setPreviewIndex(idx)"
+          @click.stop.prevent="setPreviewIndex(idx)"
         >
-          <img :src="getThumbSrc(photo)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
+          <img :src="getThumbDisplay(idx)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
         </button>
       </div>
-    </details>
+    </div>
 
     <Teleport to="body">
       <Transition name="modal-fade">
@@ -83,7 +80,7 @@
 
             <div class="modal-content">
               <img
-                :src="getModalSrc(photos[currentPhotoIndex])"
+                :src="getModalDisplay(currentPhotoIndex)"
                 :alt="`${alt} - foto ${currentPhotoIndex + 1}`"
               />
             </div>
@@ -102,7 +99,7 @@
                 @click="setCurrentIndex(idx)"
                 :aria-label="`Foto ${idx + 1}`"
               >
-                <img :src="getThumbSrc(photo)" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" />
+                <img :src="getThumbDisplay(idx)" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" />
               </button>
             </div>
           </div>
@@ -114,6 +111,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { createPageImageCache, getSessionCachedImage, preloadSessionImages } from '../services/imageCache'
 
 const props = defineProps({
   photos: {
@@ -131,7 +129,14 @@ const currentPhotoIndex = ref(0)
 const previewPhotoIndex = ref(0)
 const touchStartX = ref(null)
 const ignoreNextOpen = ref(false)
-const mainPhotoPreview = computed(() => getPreviewSrc(props.photos?.[previewPhotoIndex.value]))
+const cachedPreviewSources = ref([])
+const cachedThumbSources = ref([])
+const cachedModalSources = ref([])
+const pageImageCache = createPageImageCache()
+let preloadExecutionId = 0
+let pageScopeKey = ''
+
+const mainPhotoPreview = computed(() => getPreviewDisplay(previewPhotoIndex.value))
 
 function getPreviewSrc(photo) {
   if (!photo) {
@@ -169,13 +174,63 @@ function getThumbSrc(photo) {
   return photo.thumb || photo.preview || photo.low || photo.medium || photo.high || photo.modal || ''
 }
 
+function getPreviewDisplay(index) {
+  return cachedPreviewSources.value[index] || getPreviewSrc(props.photos?.[index])
+}
+
+function getThumbDisplay(index) {
+  return cachedThumbSources.value[index] || getThumbSrc(props.photos?.[index])
+}
+
+function getModalDisplay(index) {
+  return cachedModalSources.value[index] || getModalSrc(props.photos?.[index])
+}
+
+async function preloadGalleryImages() {
+  const photos = Array.isArray(props.photos) ? props.photos : []
+  const thisExecutionId = ++preloadExecutionId
+
+  const previewSources = photos.map((photo) => getPreviewSrc(photo))
+  const thumbSources = photos.map((photo) => getThumbSrc(photo))
+  const modalSources = photos.map((photo) => getModalSrc(photo))
+  const nextPageScopeKey = modalSources.join('|')
+
+  if (pageScopeKey && pageScopeKey !== nextPageScopeKey) {
+    pageImageCache.clear()
+    cachedModalSources.value = []
+  }
+
+  pageScopeKey = nextPageScopeKey
+
+  const sessionSources = [...previewSources, ...thumbSources]
+
+  await Promise.allSettled([
+    preloadSessionImages(sessionSources),
+    pageImageCache.preload(modalSources),
+  ])
+
+  const [resolvedPreviews, resolvedThumbs, resolvedModals] = await Promise.all([
+    Promise.all(previewSources.map((source) => getSessionCachedImage(source))),
+    Promise.all(thumbSources.map((source) => getSessionCachedImage(source))),
+    Promise.all(modalSources.map((source) => pageImageCache.get(source))),
+  ])
+
+  if (thisExecutionId !== preloadExecutionId) {
+    return
+  }
+
+  cachedPreviewSources.value = resolvedPreviews
+  cachedThumbSources.value = resolvedThumbs
+  cachedModalSources.value = resolvedModals
+}
+
 function openGallery(index) {
   if (ignoreNextOpen.value) {
     ignoreNextOpen.value = false
     return
   }
 
-  if (!getModalSrc(props.photos?.[index])) {
+  if (!getModalDisplay(index)) {
     return
   }
 
@@ -255,6 +310,14 @@ watch(galleryOpen, (isOpen) => {
 })
 
 watch(
+  () => props.photos,
+  () => {
+    preloadGalleryImages()
+  },
+  { deep: true, immediate: true }
+)
+
+watch(
   () => props.photos?.length || 0,
   (length) => {
     if (!length) {
@@ -275,6 +338,7 @@ watch(
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
+  pageImageCache.clear()
 })
 </script>
 
@@ -345,7 +409,7 @@ onBeforeUnmount(() => {
 
 .gallery-badge {
   position: absolute;
-  bottom: 0.8rem;
+  bottom: 4.85rem;
   right: 0.8rem;
   background: rgba(31, 50, 32, 0.85);
   color: white;
@@ -355,34 +419,20 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.gallery-thumbs-details {
-  margin-top: 0.3rem;
-}
-
-.gallery-thumbs-details summary {
-  padding: 0.6rem;
-  border-radius: var(--radius-sm);
-  background: rgba(183, 205, 169, 0.2);
-  border: 1px solid rgba(77, 99, 57, 0.15);
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.9rem;
-  user-select: none;
-  list-style: none;
-}
-
-.gallery-thumbs-details summary:hover {
-  background: rgba(183, 205, 169, 0.3);
-}
-
-.gallery-thumbs-details[open] summary {
-  margin-bottom: 0.6rem;
-}
-
-.gallery-thumbs {
+.gallery-thumbs-strip {
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 0.6rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(24, 36, 24, 0.62), rgba(24, 36, 24, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  z-index: 5;
 }
 
 .gallery-thumb {
@@ -393,16 +443,16 @@ onBeforeUnmount(() => {
   aspect-ratio: 1;
   padding: 0;
   transition: transform 0.15s ease;
-  border: 2px solid rgba(77, 99, 57, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.16);
 }
 
 .gallery-thumb:hover {
   transform: scale(1.05);
-  border-color: rgba(77, 99, 57, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .gallery-thumb.active {
-  border-color: rgba(77, 99, 57, 0.6);
+  border-color: #b7cda9;
 }
 
 .gallery-thumb img {
@@ -431,7 +481,7 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.95);
   position: relative;
   overflow: auto;
-  padding: 5.2rem 1.2rem 1rem;
+  padding:1.2rem 1rem;
 }
 
 .modal-side-btn {
@@ -550,6 +600,16 @@ onBeforeUnmount(() => {
   .gallery-side-btn {
     width: 38px;
     height: 38px;
+  }
+
+  .gallery-badge {
+    bottom: 4.2rem;
+  }
+
+  .gallery-thumbs-strip {
+    grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
+    gap: 0.35rem;
+    padding: 0.45rem;
   }
 
   .modal-side-btn {

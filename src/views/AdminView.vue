@@ -652,8 +652,8 @@ function patchForm(data) {
   form.description = data.description || ''
   form.location = data.location || ''
   form.curatorNotes = data.curatorNotes || ''
-  form.geoLocation.latitude = data.geoLocation?.latitude || null
-  form.geoLocation.longitude = data.geoLocation?.longitude || null
+  form.geoLocation.latitude = data.geoLocation?.latitude ?? null
+  form.geoLocation.longitude = data.geoLocation?.longitude ?? null
 
   photoUploadRef.value?.setExistingPhotos?.(Array.isArray(data.images) ? data.images : [])
   photoSnapshot.value = JSON.stringify(photoUploadRef.value?.getSnapshot?.() || [])
