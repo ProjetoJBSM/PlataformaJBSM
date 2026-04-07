@@ -1,5 +1,13 @@
 <template>
   <div class="container fade-up">
+    <div v-if="loadingOverlayVisible" class="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-dialog">
+        <div class="spinner" aria-hidden="true"></div>
+        <strong>Carregando acervo</strong>
+        <p>{{ loadingMessage || 'Buscando especies...' }}</p>
+      </div>
+    </div>
+
     <section class="section" style="margin-top: 0.5rem">
       <header class="section-header">
         <h1 class="section-title">Acervo de especies</h1>
@@ -39,8 +47,13 @@
       </div>
 
       <div class="section">
-        <div v-if="loading" class="state-box state-loading">Carregando acervo...</div>
-        <div v-else-if="error" class="state-box state-error">{{ error }}</div>
+        <div v-if="refreshing" class="state-box state-loading" style="margin-bottom: 0.7rem">
+          Atualizando dados do acervo...
+        </div>
+        <div v-if="cacheNotice" class="state-box state-loading" style="margin-bottom: 0.7rem">
+          {{ cacheNotice }}
+        </div>
+        <div v-if="error" class="state-box state-error">{{ error }}</div>
         <template v-else>
           <p class="section-subtitle" style="margin-bottom: 0.8rem">
             {{ filteredPlants.length }} registro(s) encontrado(s)
@@ -80,7 +93,10 @@ import { RouterLink } from 'vue-router'
 import { fetchPlants } from '../services/plantsRepository'
 
 const loading = ref(true)
+const refreshing = ref(false)
+const loadingMessage = ref('')
 const error = ref('')
+const cacheNotice = ref('')
 const plants = ref([])
 
 const search = ref('')
@@ -138,6 +154,8 @@ const filteredPlants = computed(() => {
   })
 })
 
+const loadingOverlayVisible = computed(() => loading.value && !plants.value.length)
+
 function clearFilters() {
   search.value = ''
   family.value = ''
@@ -146,14 +164,33 @@ function clearFilters() {
 
 async function loadPlants() {
   loading.value = true
+  refreshing.value = false
+  loadingMessage.value = 'Lendo dados salvos localmente...'
   error.value = ''
+  cacheNotice.value = ''
 
   try {
-    plants.value = await fetchPlants()
+    const cachedPlants = await fetchPlants({}, { preferCache: true, allowStaleCache: true })
+
+    if (cachedPlants.length) {
+      plants.value = cachedPlants
+      loading.value = false
+      refreshing.value = true
+      loadingMessage.value = 'Atualizando dados do servidor...'
+    }
+
+    const freshPlants = await fetchPlants({}, { forceRefresh: true })
+    plants.value = freshPlants
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Falha ao carregar o acervo.'
+    if (plants.value.length) {
+      cacheNotice.value = 'Sem conexao no momento. Exibindo dados em cache.'
+    } else {
+      error.value = err instanceof Error ? err.message : 'Falha ao carregar o acervo.'
+    }
   } finally {
     loading.value = false
+    refreshing.value = false
+    loadingMessage.value = ''
   }
 }
 

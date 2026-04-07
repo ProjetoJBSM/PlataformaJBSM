@@ -15,6 +15,57 @@ import { db } from './firebase'
 import { mockPlants } from './mockPlants'
 
 const COLLECTION_NAME = 'species'
+const PLANTS_CACHE_KEY = 'jbsm-platform:species-cache:v1'
+const PLANTS_CACHE_TTL_MS = 1000 * 60 * 60 * 12
+
+function canUseLocalStorage() {
+  return typeof window !== 'undefined' && Boolean(window.localStorage)
+}
+
+function readPlantsCache({ allowStale = false } = {}) {
+  if (!canUseLocalStorage()) {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PLANTS_CACHE_KEY)
+    if (!raw) {
+      return []
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.plants) || !parsed.savedAt) {
+      return []
+    }
+
+    const age = Date.now() - Number(parsed.savedAt)
+    if (!allowStale && age > PLANTS_CACHE_TTL_MS) {
+      return []
+    }
+
+    return parsed.plants
+  } catch {
+    return []
+  }
+}
+
+function writePlantsCache(plants) {
+  if (!canUseLocalStorage()) {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(
+      PLANTS_CACHE_KEY,
+      JSON.stringify({
+        plants,
+        savedAt: Date.now(),
+      })
+    )
+  } catch {
+    // Ignora erro de quota/localStorage indisponivel.
+  }
+}
 
 function normalizeText(value) {
   if (!value) return ''
@@ -97,20 +148,41 @@ function localFilter(plants, filters = {}) {
   })
 }
 
-export async function fetchPlants(filters = {}) {
+export async function fetchPlants(filters = {}, options = {}) {
+  const preferCache = Boolean(options.preferCache)
+  const forceRefresh = Boolean(options.forceRefresh)
+  const allowStaleCache = Boolean(options.allowStaleCache)
+
   if (!db) {
     return localFilter(mockPlants, filters)
   }
 
-  const speciesRef = collection(db, COLLECTION_NAME)
-  const q = query(speciesRef, orderBy('commonName'))
-  const snapshot = await getDocs(q)
-  const plants = snapshot.docs.map((item) => ({
-    id: item.id,
-    ...item.data(),
-  }))
+  if (preferCache && !forceRefresh) {
+    const cachedPlants = readPlantsCache({ allowStale: allowStaleCache })
+    if (cachedPlants.length) {
+      return localFilter(cachedPlants, filters)
+    }
+  }
 
-  return localFilter(plants, filters)
+  try {
+    const speciesRef = collection(db, COLLECTION_NAME)
+    const q = query(speciesRef, orderBy('commonName'))
+    const snapshot = await getDocs(q)
+    const plants = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }))
+
+    writePlantsCache(plants)
+    return localFilter(plants, filters)
+  } catch (error) {
+    const fallbackPlants = readPlantsCache({ allowStale: true })
+    if (fallbackPlants.length) {
+      return localFilter(fallbackPlants, filters)
+    }
+
+    throw error
+  }
 }
 
 export async function getPlantById(id) {

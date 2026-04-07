@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "set-admin-claim": "node scripts/set-admin-claim.mjs"
   },
   "dependencies": {
     "firebase": "^11.7.3",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.5",
+    "firebase-admin": "^13.0.2",
     "vite": "^8.0.1"
   }
 }

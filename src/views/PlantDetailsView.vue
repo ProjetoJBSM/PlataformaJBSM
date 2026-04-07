@@ -1,21 +1,26 @@
 <template>
   <div class="container fade-up">
+    <div v-if="loading" class="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-dialog">
+        <div class="spinner" aria-hidden="true"></div>
+        <strong>Carregando especie</strong>
+        <p>Buscando fotos e informacoes da planta.</p>
+      </div>
+    </div>
+
     <section class="section" style="margin-top: 0.5rem">
       <RouterLink class="btn btn-secondary" to="/acervo">Voltar ao acervo</RouterLink>
 
-      <div v-if="loading" class="state-box state-loading" style="margin-top: 1rem">
-        Carregando especie...
-      </div>
-      <div v-else-if="error" class="state-box state-error" style="margin-top: 1rem">{{ error }}</div>
-      <div v-else-if="!plant" class="empty-state" style="margin-top: 1rem">
+      <div v-if="error" class="state-box state-error" style="margin-top: 1rem">{{ error }}</div>
+      <div v-else-if="!loading && !plant" class="empty-state" style="margin-top: 1rem">
         Especie nao encontrada.
       </div>
 
-      <article v-else class="section" style="margin-top: 1rem">
+      <article v-else-if="!loading" class="section" style="margin-top: 1rem">
         <div class="detail-grid">
           <div class="detail-left">
             <PhotoGallery
-              :photos="coverImages"
+              :photos="galleryPhotos"
               :alt="plant.commonName || plant.scientificName"
             />
           </div>
@@ -69,7 +74,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useConnectionProfile } from '../composables/useConnectionProfile'
 import { getPlantById } from '../services/plantsRepository'
@@ -83,12 +88,32 @@ const loading = ref(true)
 const error = ref('')
 const plant = ref(null)
 
-const coverImages = computed(() => {
+const modalImageVariant = computed(() => {
+  return preferredImageVariant.value === 'high' ? 'high' : 'medium'
+})
+
+const galleryPhotos = computed(() => {
   if (!plant.value?.images) {
     return []
   }
 
-  return plant.value.images.map((img) => img[preferredImageVariant.value] || img.high || img.medium || img.low).filter(Boolean)
+  return plant.value.images
+    .map((img) => {
+      if (typeof img === 'string') {
+        return {
+          preview: img,
+          thumb: img,
+          modal: img,
+        }
+      }
+
+      return {
+        preview: img.low || img.medium || img.high,
+        thumb: img.low || img.medium || img.high,
+        modal: img[modalImageVariant.value] || img.high || img.medium || img.low,
+      }
+    })
+    .filter((img) => Boolean(img.preview || img.modal))
 })
 
 async function loadPlant() {
@@ -105,6 +130,13 @@ async function loadPlant() {
 }
 
 onMounted(loadPlant)
+
+watch(
+  () => route.params.id,
+  () => {
+    loadPlant()
+  }
+)
 </script>
 
 <style scoped>

@@ -15,6 +15,7 @@ dist-ssr
 !.env.example
 *.local
 serviceAccountKey.json
+*firebase-adminsdk-*.json
 
 # Editor directories and files
 .vscode/*
@@ -26,3 +27,7 @@ serviceAccountKey.json
 *.njsproj
 *.sln
 *.sw?
+
+firebase
+firebase/rules.md
+instructions.md

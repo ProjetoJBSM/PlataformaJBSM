@@ -15,6 +15,9 @@
         <p v-if="errorMessage" class="state-box state-error" style="margin-bottom: 0.8rem">
           {{ errorMessage }}
         </p>
+        <p v-if="successMessage" class="state-box state-loading" style="margin-bottom: 0.8rem">
+          {{ successMessage }}
+        </p>
 
         <form class="form-grid" @submit.prevent="handleLogin">
           <label class="field-full">
@@ -45,6 +48,15 @@
             <button class="btn btn-primary" type="submit" :disabled="loading || !hasFirebaseConfig">
               {{ loading ? 'Entrando...' : 'Entrar' }}
             </button>
+            <a
+              v-if="showResetPasswordLink"
+              class="forgot-link"
+              href="#"
+              :aria-disabled="resetLoading || loading"
+              @click.prevent="handleResetPassword"
+            >
+              {{ resetLoading ? 'Enviando email...' : 'Esqueceu a sua senha?' }}
+            </a>
           </div>
         </form>
       </div>
@@ -54,7 +66,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { useRoute, useRouter } from 'vue-router'
 
 import { auth, hasFirebaseConfig } from '../services/firebase'
@@ -65,7 +77,10 @@ const router = useRouter()
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
+const resetLoading = ref(false)
+const failedLoginAttempts = ref(0)
 const errorMessage = ref('')
+const successMessage = ref('')
 
 const infoMessage = computed(() => {
   if (!hasFirebaseConfig || route.query.reason === 'firebase-config') {
@@ -78,6 +93,17 @@ const infoMessage = computed(() => {
 
   return ''
 })
+
+const showResetPasswordLink = computed(() => failedLoginAttempts.value >= 3)
+
+function isInvalidCredentialError(code) {
+  return (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found' ||
+    code === 'auth/too-many-requests'
+  )
+}
 
 function normalizeAuthError(error) {
   const code = error?.code || ''
@@ -95,6 +121,7 @@ function normalizeAuthError(error) {
 
 async function handleLogin() {
   errorMessage.value = ''
+  successMessage.value = ''
 
   if (!hasFirebaseConfig || !auth) {
     errorMessage.value = 'Firebase nao configurado para autenticacao neste ambiente.'
@@ -113,6 +140,8 @@ async function handleLogin() {
       return
     }
 
+    failedLoginAttempts.value = 0
+
     const redirectTarget =
       typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/admin')
         ? route.query.redirect
@@ -120,9 +149,58 @@ async function handleLogin() {
 
     await router.replace(redirectTarget)
   } catch (error) {
+    if (isInvalidCredentialError(error?.code)) {
+      failedLoginAttempts.value += 1
+    }
+
     errorMessage.value = normalizeAuthError(error)
   } finally {
     loading.value = false
+  }
+}
+
+function normalizeResetError(error) {
+  const code = error?.code || ''
+
+  if (code === 'auth/invalid-email') {
+    return 'Informe um email valido para redefinir a senha.'
+  }
+
+  if (code === 'auth/user-not-found') {
+    return 'Nao encontramos um usuario com esse email.'
+  }
+
+  if (code === 'auth/too-many-requests') {
+    return 'Muitas solicitacoes de redefinicao. Tente novamente em alguns minutos.'
+  }
+
+  return 'Nao foi possivel enviar o email de redefinicao agora.'
+}
+
+async function handleResetPassword() {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  if (!hasFirebaseConfig || !auth) {
+    errorMessage.value = 'Firebase nao configurado para envio de redefinicao.'
+    return
+  }
+
+  const targetEmail = email.value.trim()
+  if (!targetEmail) {
+    errorMessage.value = 'Digite seu email para receber o link de redefinicao.'
+    return
+  }
+
+  resetLoading.value = true
+
+  try {
+    await sendPasswordResetEmail(auth, targetEmail)
+    successMessage.value = 'Email de redefinicao enviado. Verifique sua caixa de entrada e spam.'
+  } catch (error) {
+    errorMessage.value = normalizeResetError(error)
+  } finally {
+    resetLoading.value = false
   }
 }
 </script>
@@ -135,5 +213,18 @@ async function handleLogin() {
 
 .admin-login-panel {
   margin-top: 1rem;
+}
+
+.forgot-link {
+  color: var(--green-700);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.1rem 0;
+}
+
+.forgot-link[aria-disabled='true'] {
+  opacity: 0.55;
+  pointer-events: none;
 }
 </style>

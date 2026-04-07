@@ -1,16 +1,42 @@
 <template>
   <div class="photo-gallery">
-    <div class="gallery-container" @click="openGallery(0)">
+    <div
+      class="gallery-container"
+      @click="openGallery(previewPhotoIndex)"
+      @touchstart.passive="handleTouchStart"
+      @touchend.passive="handleTouchEnd"
+    >
       <img
-        v-if="photos[0]"
-        :src="photos[0]"
+        v-if="mainPhotoPreview"
+        :src="mainPhotoPreview"
         :alt="alt"
         loading="lazy"
         class="gallery-main"
       />
       <div v-else class="gallery-placeholder">Sem foto</div>
 
-      <div v-if="photos.length > 1" class="gallery-badge">{{ photos.length }} fotos</div>
+      <button
+        v-if="photos.length > 1"
+        type="button"
+        class="gallery-side-btn left"
+        aria-label="Foto anterior"
+        @click.stop="previousPreview"
+      >
+        &lt;
+      </button>
+      <button
+        v-if="photos.length > 1"
+        type="button"
+        class="gallery-side-btn right"
+        aria-label="Proxima foto"
+        @click.stop="nextPreview"
+      >
+        &gt;
+      </button>
+
+      <div v-if="photos.length > 1" class="gallery-badge">
+        {{ previewPhotoIndex + 1 }} / {{ photos.length }}
+      </div>
     </div>
 
     <details class="gallery-thumbs-details" v-if="photos.length > 1">
@@ -21,10 +47,11 @@
           :key="idx"
           type="button"
           class="gallery-thumb"
+          :class="{ active: idx === previewPhotoIndex }"
           :aria-label="`Foto ${idx + 1}`"
-          @click.prevent="openGallery(idx)"
+          @click.prevent="setPreviewIndex(idx)"
         >
-          <img :src="photo" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
+          <img :src="getThumbSrc(photo)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
         </button>
       </div>
     </details>
@@ -35,31 +62,34 @@
           <div class="gallery-modal" @click.stop>
             <button class="modal-close" type="button" @click="closeGallery" aria-label="Fechar">×</button>
 
+            <button
+              v-if="photos.length > 1"
+              type="button"
+              class="modal-side-btn modal-side-btn-left"
+              aria-label="Foto anterior"
+              @click.stop="previousPhoto"
+            >
+              &lt;
+            </button>
+            <button
+              v-if="photos.length > 1"
+              type="button"
+              class="modal-side-btn modal-side-btn-right"
+              aria-label="Proxima foto"
+              @click.stop="nextPhoto"
+            >
+              &gt;
+            </button>
+
             <div class="modal-content">
-              <img :src="photos[currentPhotoIndex]" :alt="`${alt} - foto ${currentPhotoIndex + 1}`" />
+              <img
+                :src="getModalSrc(photos[currentPhotoIndex])"
+                :alt="`${alt} - foto ${currentPhotoIndex + 1}`"
+              />
             </div>
 
             <div v-if="photos.length > 1" class="modal-info">
               Foto {{ currentPhotoIndex + 1 }} de {{ photos.length }}
-            </div>
-
-            <div v-if="photos.length > 1" class="modal-nav">
-              <button
-                type="button"
-                class="modal-btn"
-                @click="previousPhoto"
-                aria-label="Foto anterior"
-              >
-                ‹ Anterior
-              </button>
-              <button
-                type="button"
-                class="modal-btn"
-                @click="nextPhoto"
-                aria-label="Proxima foto"
-              >
-                Proxima ›
-              </button>
             </div>
 
             <div v-if="photos.length > 1" class="modal-thumbnails">
@@ -69,10 +99,10 @@
                 type="button"
                 class="modal-thumb"
                 :class="{ active: idx === currentPhotoIndex }"
-                @click="currentPhotoIndex = idx"
+                @click="setCurrentIndex(idx)"
                 :aria-label="`Foto ${idx + 1}`"
               >
-                <img :src="photo" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" />
+                <img :src="getThumbSrc(photo)" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" />
               </button>
             </div>
           </div>
@@ -83,7 +113,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
   photos: {
@@ -98,9 +128,59 @@ const props = defineProps({
 
 const galleryOpen = ref(false)
 const currentPhotoIndex = ref(0)
+const previewPhotoIndex = ref(0)
+const touchStartX = ref(null)
+const ignoreNextOpen = ref(false)
+const mainPhotoPreview = computed(() => getPreviewSrc(props.photos?.[previewPhotoIndex.value]))
+
+function getPreviewSrc(photo) {
+  if (!photo) {
+    return ''
+  }
+
+  if (typeof photo === 'string') {
+    return photo
+  }
+
+  return photo.preview || photo.low || photo.medium || photo.high || photo.modal || photo.thumb || ''
+}
+
+function getModalSrc(photo) {
+  if (!photo) {
+    return ''
+  }
+
+  if (typeof photo === 'string') {
+    return photo
+  }
+
+  return photo.modal || photo.high || photo.medium || photo.low || photo.preview || photo.thumb || ''
+}
+
+function getThumbSrc(photo) {
+  if (!photo) {
+    return ''
+  }
+
+  if (typeof photo === 'string') {
+    return photo
+  }
+
+  return photo.thumb || photo.preview || photo.low || photo.medium || photo.high || photo.modal || ''
+}
 
 function openGallery(index) {
+  if (ignoreNextOpen.value) {
+    ignoreNextOpen.value = false
+    return
+  }
+
+  if (!getModalSrc(props.photos?.[index])) {
+    return
+  }
+
   currentPhotoIndex.value = index
+  previewPhotoIndex.value = index
   galleryOpen.value = true
 }
 
@@ -110,16 +190,88 @@ function closeGallery() {
 
 function nextPhoto() {
   currentPhotoIndex.value = (currentPhotoIndex.value + 1) % (props.photos?.length || 1)
+  previewPhotoIndex.value = currentPhotoIndex.value
 }
 
 function previousPhoto() {
   const length = props.photos?.length || 1
   currentPhotoIndex.value = (currentPhotoIndex.value - 1 + length) % length
+  previewPhotoIndex.value = currentPhotoIndex.value
+}
+
+function setCurrentIndex(index) {
+  currentPhotoIndex.value = index
+  previewPhotoIndex.value = index
+}
+
+function setPreviewIndex(index) {
+  previewPhotoIndex.value = index
+}
+
+function nextPreview() {
+  previewPhotoIndex.value = (previewPhotoIndex.value + 1) % (props.photos?.length || 1)
+}
+
+function previousPreview() {
+  const length = props.photos?.length || 1
+  previewPhotoIndex.value = (previewPhotoIndex.value - 1 + length) % length
+}
+
+function handleTouchStart(event) {
+  if (!props.photos?.length) {
+    return
+  }
+
+  touchStartX.value = event.changedTouches?.[0]?.clientX ?? null
+}
+
+function handleTouchEnd(event) {
+  if (!props.photos?.length || touchStartX.value === null) {
+    return
+  }
+
+  const touchEndX = event.changedTouches?.[0]?.clientX
+  if (typeof touchEndX !== 'number') {
+    touchStartX.value = null
+    return
+  }
+
+  const deltaX = touchEndX - touchStartX.value
+  const swipeThreshold = 42
+
+  if (deltaX >= swipeThreshold) {
+    ignoreNextOpen.value = true
+    previousPreview()
+  } else if (deltaX <= -swipeThreshold) {
+    ignoreNextOpen.value = true
+    nextPreview()
+  }
+
+  touchStartX.value = null
 }
 
 watch(galleryOpen, (isOpen) => {
   document.body.style.overflow = isOpen ? 'hidden' : ''
 })
+
+watch(
+  () => props.photos?.length || 0,
+  (length) => {
+    if (!length) {
+      previewPhotoIndex.value = 0
+      currentPhotoIndex.value = 0
+      return
+    }
+
+    if (previewPhotoIndex.value >= length) {
+      previewPhotoIndex.value = 0
+    }
+
+    if (currentPhotoIndex.value >= length) {
+      currentPhotoIndex.value = previewPhotoIndex.value
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
@@ -153,6 +305,32 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.gallery-side-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(24, 36, 24, 0.5);
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 4;
+}
+
+.gallery-side-btn.left {
+  left: 0.6rem;
+}
+
+.gallery-side-btn.right {
+  right: 0.6rem;
 }
 
 .gallery-placeholder {
@@ -223,6 +401,10 @@ onBeforeUnmount(() => {
   border-color: rgba(77, 99, 57, 0.4);
 }
 
+.gallery-thumb.active {
+  border-color: rgba(77, 99, 57, 0.6);
+}
+
 .gallery-thumb img {
   width: 100%;
   height: 100%;
@@ -250,6 +432,32 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: auto;
   padding: 5.2rem 1.2rem 1rem;
+}
+
+.modal-side-btn {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(12, 18, 13, 0.45);
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 10001;
+}
+
+.modal-side-btn-left {
+  left: max(0.7rem, env(safe-area-inset-left));
+}
+
+.modal-side-btn-right {
+  right: max(0.7rem, env(safe-area-inset-right));
 }
 
 .modal-close {
@@ -285,8 +493,8 @@ onBeforeUnmount(() => {
 }
 
 .modal-content img {
-  max-width: 92vw;
-  max-height: 70vh;
+  max-width: 88vw;
+  max-height: 82vh;
   object-fit: contain;
   border-radius: var(--radius-md);
 }
@@ -296,29 +504,6 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;
   padding: 0 1rem;
-}
-
-.modal-nav {
-  display: flex;
-  justify-content: center;
-  gap: 0.8rem;
-  padding: 0 1rem;
-}
-
-.modal-btn {
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
-  padding: 0.65rem 1.2rem;
-  border-radius: 999px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.modal-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .modal-thumbnails {
@@ -362,21 +547,24 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 600px) {
+  .gallery-side-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .modal-side-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.25rem;
+  }
+
   .modal-content {
-    padding: 1rem 0.5rem;
+    padding: 1rem 2.8rem;
   }
 
   .modal-content img {
-    max-width: 96vw;
-    max-height: 62vh;
-  }
-
-  .modal-nav {
-    flex-direction: column;
-  }
-
-  .modal-btn {
-    width: 100%;
+    max-width: 100%;
+    max-height: 68vh;
   }
 
   .gallery-container {

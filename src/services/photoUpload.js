@@ -2,8 +2,9 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'fire
 import { storage } from './firebase'
 
 const STORAGE_PATH = 'species-images'
+const SUPPORTED_COMPRESS_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
-export async function uploadPlantPhoto(file, plantId, photoIndex = 0) {
+export async function uploadPlantPhoto(file, plantId, photoIndex = 0, variant = 'original') {
   if (!storage) {
     throw new Error('Firebase Storage nao esta configurado')
   }
@@ -18,7 +19,10 @@ export async function uploadPlantPhoto(file, plantId, photoIndex = 0) {
 
   const timestamp = Date.now()
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-  const filename = `${plantId}-${photoIndex}-${timestamp}.${ext}`
+  const normalizedVariant = String(variant || 'original')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+  const filename = `${plantId}-${photoIndex}-${normalizedVariant}-${timestamp}.${ext}`
   const storagePath = `${STORAGE_PATH}/${filename}`
 
   const fileRef = ref(storage, storagePath)
@@ -89,6 +93,11 @@ export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, qua
 
         ctx.drawImage(img, 0, 0, width, height)
 
+        const outputType = SUPPORTED_COMPRESS_TYPES.has(file.type) ? file.type : 'image/jpeg'
+        const outputExt = outputType === 'image/png' ? 'png' : outputType === 'image/webp' ? 'webp' : 'jpg'
+        const baseName = file.name.replace(/\.[^.]+$/, '')
+        const outputName = `${baseName}.${outputExt}`
+
         canvas.toBlob(
           (blob) => {
             if (!blob) {
@@ -96,14 +105,14 @@ export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, qua
               return
             }
 
-            const compressedFile = new File([blob], file.name, {
-              type: file.type,
+            const compressedFile = new File([blob], outputName, {
+              type: outputType,
               lastModified: file.lastModified,
             })
 
             resolve(compressedFile)
           },
-          file.type,
+          outputType,
           quality
         )
       }

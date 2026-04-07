@@ -16,7 +16,7 @@
           class="admin-tab"
           :class="{ active: activeTab === 'records' }"
           type="button"
-          @click="activeTab = 'records'"
+          @click="setActiveTab('records')"
         >
           Registros
         </button>
@@ -24,7 +24,7 @@
           class="admin-tab"
           :class="{ active: activeTab === 'csv' }"
           type="button"
-          @click="activeTab = 'csv'"
+          @click="setActiveTab('csv')"
         >
           Importacao CSV
         </button>
@@ -32,7 +32,7 @@
           class="admin-tab"
           :class="{ active: activeTab === 'plates' }"
           type="button"
-          @click="activeTab = 'plates'"
+          @click="setActiveTab('plates')"
         >
           Geracao de placas
         </button>
@@ -40,6 +40,14 @@
 
       <div v-if="statusMessage" class="state-box" :class="statusError ? 'state-error' : 'state-loading'">
         {{ statusMessage }}
+      </div>
+
+      <div v-if="busyMessage" class="loading-overlay" role="status" aria-live="polite">
+        <div class="loading-dialog">
+          <div class="spinner" aria-hidden="true"></div>
+          <strong>Aguarde</strong>
+          <p>{{ busyMessage }}</p>
+        </div>
       </div>
 
       <div v-if="activeTab === 'records'" class="split-layout">
@@ -73,7 +81,13 @@
           <form class="form-grid" style="margin-top: 0.85rem" @submit.prevent="saveCurrentPlant">
             <label>
               <span class="field-label">ID *</span>
-              <input v-model="form.id" class="input" required placeholder="Ex.: 01048" />
+              <input
+                v-model="form.id"
+                class="input"
+                required
+                placeholder="Ex.: 01048"
+                :disabled="Boolean(selectedId)"
+              />
             </label>
             <label>
               <span class="field-label">Codigo</span>
@@ -129,6 +143,7 @@
               <span class="field-label">Fotos *</span>
               <PhotoUpload
                 ref="photoUploadRef"
+                @photos-changed="handlePhotosChanged"
                 @geolocation-detected="handleGeoLocationDetected"
               />
             </div>
@@ -142,12 +157,21 @@
               <textarea v-model="form.curatorNotes" class="textarea"></textarea>
             </label>
 
-            <div class="field-full form-actions">
-              <button class="btn btn-primary" type="submit">Salvar</button>
-              <button class="btn btn-secondary" type="button" @click="startNewPlant">Limpar formulario</button>
-              <button class="btn btn-danger" type="button" :disabled="!selectedId" @click="removeCurrentPlant">
-                Excluir
-              </button>
+            <div class="field-full edit-actions-bar">
+              <div class="form-actions">
+                <button v-if="hasUnsavedChanges" class="btn btn-primary" type="submit">Salvar alteracoes</button>
+                <button
+                  v-if="hasUnsavedChanges"
+                  class="btn btn-secondary"
+                  type="button"
+                  @click="discardChanges"
+                >
+                  Descartar alteracoes
+                </button>
+                <button class="btn btn-danger" type="button" :disabled="!selectedId" @click="removeCurrentPlant">
+                  Excluir registro
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -268,14 +292,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { signOut } from 'firebase/auth'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 
 import { auth } from '../services/firebase'
 import { normalizeCsvRow, parseCsvFile } from '../services/csvUtils'
-import { compressImage, uploadPlantPhoto } from '../services/photoUpload'
+import { compressImage, deletePlantPhoto, uploadPlantPhoto } from '../services/photoUpload'
 import {
   deletePlantById,
   fetchPlants,
@@ -284,8 +308,9 @@ import {
 } from '../services/plantsRepository'
 import PhotoUpload from '../components/PhotoUpload.vue'
 
-const activeTab = ref('records')
+const route = useRoute()
 const router = useRouter()
+const activeTab = ref(normalizeAdminTab(typeof route.query.tab === 'string' ? route.query.tab : 'records'))
 const plants = ref([])
 const selectedId = ref('')
 const photoUploadRef = ref(null)
@@ -305,12 +330,29 @@ const plateTheme = reactive({
   qrDark: '#1d3d1f',
 })
 
+const busyStack = ref([])
+const busyMessage = computed(() => busyStack.value[busyStack.value.length - 1] || '')
+
 const statusMessage = ref('')
 const statusError = ref(false)
+const formSnapshotVersion = ref(0)
+const photoSnapshot = ref('[]')
+const baselineSnapshot = ref('')
+const suppressSnapshotTracking = ref(false)
 
 const form = reactive(createEmptyForm())
 
 const selectedPlatePlant = computed(() => plants.value.find((item) => item.id === platePlantId.value) || null)
+const hasUnsavedChanges = computed(() => {
+  if (!baselineSnapshot.value) {
+    return false
+  }
+
+  // Dependencias reativas para recalcular quando formulario/fotos mudarem.
+  formSnapshotVersion.value
+  photoSnapshot.value
+  return baselineSnapshot.value !== buildCurrentSnapshot()
+})
 
 function createEmptyForm() {
   return {
@@ -341,6 +383,186 @@ function clearStatus() {
   statusError.value = false
 }
 
+function normalizeAdminTab(tab) {
+  return ['records', 'csv', 'plates'].includes(tab) ? tab : 'records'
+}
+
+function pushBusy(message) {
+  busyStack.value = [...busyStack.value, message]
+}
+
+function popBusy() {
+  if (!busyStack.value.length) {
+    return
+  }
+
+  busyStack.value = busyStack.value.slice(0, -1)
+}
+
+function updateBusyMessage(message) {
+  if (!busyStack.value.length) {
+    pushBusy(message)
+    return
+  }
+
+  busyStack.value = [...busyStack.value.slice(0, -1), message]
+}
+
+async function syncAdminTabQuery(tab) {
+  if (route.name !== 'admin') {
+    return
+  }
+
+  const currentTabRaw = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const currentTab = normalizeAdminTab(currentTabRaw)
+
+  if (currentTabRaw && currentTab === tab) {
+    return
+  }
+
+  await router.replace({
+    name: 'admin',
+    query: {
+      ...route.query,
+      tab,
+    },
+  })
+}
+
+function setActiveTab(tab) {
+  const normalized = normalizeAdminTab(tab)
+  if (activeTab.value === normalized) {
+    return
+  }
+
+  activeTab.value = normalized
+  syncAdminTabQuery(normalized)
+}
+
+function parseCoordinate(value) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(value)
+}
+
+function normalizeFormForSnapshot() {
+  return {
+    id: String(form.id || '').trim(),
+    code: String(form.code || '').trim(),
+    commonName: String(form.commonName || '').trim(),
+    scientificName: String(form.scientificName || '').trim(),
+    family: String(form.family || '').trim(),
+    origin: String(form.origin || '').trim(),
+    type: String(form.type || '').trim(),
+    description: String(form.description || '').trim(),
+    location: String(form.location || '').trim(),
+    curatorNotes: String(form.curatorNotes || '').trim(),
+    geoLocation: {
+      latitude: parseCoordinate(form.geoLocation.latitude),
+      longitude: parseCoordinate(form.geoLocation.longitude),
+    },
+  }
+}
+
+function buildCurrentSnapshot() {
+  return JSON.stringify({
+    form: normalizeFormForSnapshot(),
+    photos: photoUploadRef.value?.getSnapshot?.() || [],
+  })
+}
+
+function resetBaselineSnapshot() {
+  baselineSnapshot.value = buildCurrentSnapshot()
+}
+
+function extractStoragePathFromUrl(url) {
+  if (typeof url !== 'string' || !url) {
+    return null
+  }
+
+  try {
+    const parsed = new URL(url)
+    const marker = '/o/'
+    const markerIndex = parsed.pathname.indexOf(marker)
+
+    if (markerIndex < 0) {
+      return null
+    }
+
+    const encodedPath = parsed.pathname.slice(markerIndex + marker.length)
+    return decodeURIComponent(encodedPath)
+  } catch {
+    return null
+  }
+}
+
+function extractStoragePathsFromImage(image) {
+  if (!image) {
+    return []
+  }
+
+  if (typeof image === 'string') {
+    const parsedPath = extractStoragePathFromUrl(image)
+    return parsedPath ? [parsedPath] : []
+  }
+
+  return [
+    image.lowPath,
+    image.mediumPath,
+    image.highPath,
+    image.path,
+    extractStoragePathFromUrl(image.low),
+    extractStoragePathFromUrl(image.medium),
+    extractStoragePathFromUrl(image.high),
+  ].filter(Boolean)
+}
+
+function collectStoragePaths(images = []) {
+  const entries = images || []
+  return [...new Set(entries.flatMap((image) => extractStoragePathsFromImage(image)))]
+}
+
+async function removeStoragePaths(paths = []) {
+  const uniquePaths = [...new Set((paths || []).filter(Boolean))]
+  const failed = []
+
+  for (const storagePath of uniquePaths) {
+    try {
+      await deletePlantPhoto(storagePath)
+    } catch {
+      failed.push(storagePath)
+    }
+  }
+
+  return failed
+}
+
+function handlePhotosChanged(snapshot) {
+  photoSnapshot.value = JSON.stringify(Array.isArray(snapshot) ? snapshot : [])
+}
+
+async function discardChanges() {
+  if (selectedId.value) {
+    const selectedPlant = plants.value.find((item) => item.id === selectedId.value)
+    if (selectedPlant) {
+      patchForm(selectedPlant)
+      clearStatus()
+      setStatus('Alteracoes descartadas.')
+      return
+    }
+  }
+
+  startNewPlant()
+  setStatus('Alteracoes descartadas.')
+}
+
 async function logoutAdmin() {
   try {
     if (auth) {
@@ -355,37 +577,62 @@ async function buildImagesFromUpload() {
   const photos = photoUploadRef.value?.getPhotos?.() || []
 
   if (photos.length === 0) {
-    if (selectedId.value) {
-      return plants.value.find((item) => item.id === selectedId.value)?.images || []
-    }
-    return []
+    setStatus('Adicione pelo menos 1 foto para salvar o registro.', true)
+    return null
+  }
+
+  if (photos.length > 10) {
+    setStatus('Limite de 10 fotos por especie excedido.', true)
+    return null
   }
 
   const images = []
+  pushBusy('Otimizando e enviando fotos...')
 
-  for (const photoItem of photos) {
-    try {
-      setStatus(`Enviando foto ${photoItem.file.name}...`)
+  try {
+    for (let index = 0; index < photos.length; index += 1) {
+      const photoItem = photos[index]
 
-      const uploaded = await uploadPlantPhoto(photoItem.file, form.id)
+      if (photoItem.kind === 'existing') {
+        images.push(photoItem.image)
+        continue
+      }
 
-      images.push({
-        low: uploaded.url,
-        medium: uploaded.url,
-        high: uploaded.url,
-        alt: form.commonName || form.scientificName || 'Imagem da especie',
-      })
-    } catch (err) {
-      setStatus(`Erro ao enviar foto: ${err instanceof Error ? err.message : 'erro desconhecido'}`, true)
-      return null
+      try {
+        updateBusyMessage(`Otimizando foto ${index + 1} de ${photos.length}: ${photoItem.file?.name || 'imagem'}`)
+        setStatus(`Otimizando e enviando foto ${index + 1} de ${photos.length}...`)
+
+        const lowFile = await compressImage(photoItem.file, 800, 600, 0.74)
+        const mediumFile = await compressImage(photoItem.file, 1440, 1080, 0.8)
+        const highFile = await compressImage(photoItem.file, 1920, 1440, 0.84)
+
+        const lowUpload = await uploadPlantPhoto(lowFile, form.id, index, 'low')
+        const mediumUpload = await uploadPlantPhoto(mediumFile, form.id, index, 'medium')
+        const highUpload = await uploadPlantPhoto(highFile, form.id, index, 'high')
+
+        images.push({
+          low: lowUpload.url,
+          medium: mediumUpload.url,
+          high: highUpload.url,
+          lowPath: lowUpload.path,
+          mediumPath: mediumUpload.path,
+          highPath: highUpload.path,
+          alt: form.commonName || form.scientificName || 'Imagem da especie',
+        })
+      } catch (err) {
+        setStatus(`Erro ao enviar foto: ${err instanceof Error ? err.message : 'erro desconhecido'}`, true)
+        return null
+      }
     }
+  } finally {
+    popBusy()
   }
 
   return images.length > 0 ? images : []
 }
 
 function handleGeoLocationDetected(event) {
-  if (event.latitude && event.longitude) {
+  if (isFiniteNumber(event.latitude) && isFiniteNumber(event.longitude)) {
     form.geoLocation.latitude = event.latitude
     form.geoLocation.longitude = event.longitude
     setStatus('Geolocalizacao importada da foto!')
@@ -393,6 +640,8 @@ function handleGeoLocationDetected(event) {
 }
 
 function patchForm(data) {
+  suppressSnapshotTracking.value = true
+
   form.id = data.id || ''
   form.code = data.code || ''
   form.commonName = data.commonName || ''
@@ -406,7 +655,12 @@ function patchForm(data) {
   form.geoLocation.latitude = data.geoLocation?.latitude || null
   form.geoLocation.longitude = data.geoLocation?.longitude || null
 
-  photoUploadRef.value?.clear?.()
+  photoUploadRef.value?.setExistingPhotos?.(Array.isArray(data.images) ? data.images : [])
+  photoSnapshot.value = JSON.stringify(photoUploadRef.value?.getSnapshot?.() || [])
+
+  suppressSnapshotTracking.value = false
+  formSnapshotVersion.value += 1
+  resetBaselineSnapshot()
 }
 
 function startNewPlant() {
@@ -422,6 +676,8 @@ function selectPlant(item) {
 }
 
 async function loadPlants() {
+  pushBusy('Carregando especies...')
+
   try {
     plants.value = await fetchPlants()
     plants.value.sort((a, b) => {
@@ -436,6 +692,8 @@ async function loadPlants() {
     }
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao carregar especies.', true)
+  } finally {
+    popBusy()
   }
 }
 
@@ -448,19 +706,20 @@ async function saveCurrentPlant() {
   }
 
   try {
+    const previousPlant = selectedId.value
+      ? plants.value.find((item) => item.id === selectedId.value) || null
+      : null
+    const previousImages = Array.isArray(previousPlant?.images) ? previousPlant.images : []
+
     const images = await buildImagesFromUpload()
 
     if (images === null) {
       return
     }
 
-    const geoLocation =
-      form.geoLocation.latitude && form.geoLocation.longitude
-        ? {
-            latitude: Number(form.geoLocation.latitude),
-            longitude: Number(form.geoLocation.longitude),
-          }
-        : null
+    const latitude = parseCoordinate(form.geoLocation.latitude)
+    const longitude = parseCoordinate(form.geoLocation.longitude)
+    const geoLocation = latitude !== null && longitude !== null ? { latitude, longitude } : null
 
     await upsertPlant({
       ...form,
@@ -468,8 +727,23 @@ async function saveCurrentPlant() {
       geoLocation,
     })
 
+    const removedPaths = collectStoragePaths(previousImages).filter(
+      (path) => !collectStoragePaths(images).includes(path)
+    )
+    const failedRemovals = await removeStoragePaths(removedPaths)
+
     await loadPlants()
     selectedId.value = form.id.trim()
+    const refreshed = plants.value.find((item) => item.id === selectedId.value)
+    if (refreshed) {
+      patchForm(refreshed)
+    }
+
+    if (failedRemovals.length) {
+      setStatus('Registro salvo, mas algumas fotos antigas nao puderam ser removidas do Storage.', true)
+      return
+    }
+
     setStatus('Registro salvo com sucesso.')
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao salvar registro.', true)
@@ -487,14 +761,28 @@ async function removeCurrentPlant() {
   }
 
   clearStatus()
+  pushBusy('Excluindo registro e fotos associadas...')
 
   try {
+    const selectedPlant = plants.value.find((item) => item.id === selectedId.value) || null
+    const currentPaths = collectStoragePaths(selectedPlant?.images || [])
+
     await deletePlantById(selectedId.value)
+    const failedRemovals = await removeStoragePaths(currentPaths)
+
     await loadPlants()
     startNewPlant()
+
+    if (failedRemovals.length) {
+      setStatus('Registro removido, mas algumas fotos nao puderam ser excluidas do Storage.', true)
+      return
+    }
+
     setStatus('Registro removido com sucesso.')
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao remover registro.', true)
+  } finally {
+    popBusy()
   }
 }
 
@@ -532,6 +820,7 @@ async function importCsvRows() {
   }
 
   clearStatus()
+  pushBusy('Importando registros CSV...')
 
   try {
     const result = await importPlantsBatch(csvRows.value)
@@ -539,6 +828,8 @@ async function importCsvRows() {
     setStatus(`Importacao concluida: ${result.total} registro(s) em modo ${result.mode}.`)
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao importar CSV.', true)
+  } finally {
+    popBusy()
   }
 }
 
@@ -733,8 +1024,42 @@ function downloadPlate() {
 }
 
 onMounted(async () => {
+  await syncAdminTabQuery(activeTab.value)
+  patchForm(createEmptyForm())
   await loadPlants()
   await nextTick()
   clearCanvas()
 })
+
+watch(
+  form,
+  () => {
+    if (!suppressSnapshotTracking.value) {
+      formSnapshotVersion.value += 1
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const normalized = normalizeAdminTab(typeof tab === 'string' ? tab : 'records')
+    if (normalized !== activeTab.value) {
+      activeTab.value = normalized
+    }
+  },
+  { immediate: true }
+)
 </script>
+
+<style scoped>
+.edit-actions-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  margin-top: 1rem;
+  padding: 0.9rem 0 0.25rem;
+  background: linear-gradient(180deg, rgba(255, 254, 249, 0), rgba(255, 254, 249, 0.96) 24%);
+}
+</style>

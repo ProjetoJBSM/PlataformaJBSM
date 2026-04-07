@@ -20,43 +20,34 @@ export async function extractExifFromFile(file) {
         }
 
         const exif = piexif.load(data)
-        const gps = exif['0th']?.[piexif.ImageIFD.GPSInfo]
+        const gpsIfd = exif?.GPS || {}
 
-        if (!gps) {
+        const lat = gpsIfd[piexif.GPSIFD.GPSLatitude]
+        const latRef = bytesToString(gpsIfd[piexif.GPSIFD.GPSLatitudeRef])
+        const lng = gpsIfd[piexif.GPSIFD.GPSLongitude]
+        const lngRef = bytesToString(gpsIfd[piexif.GPSIFD.GPSLongitudeRef])
+        const alt = gpsIfd[piexif.GPSIFD.GPSAltitude]
+        const datetime =
+          exif?.Exif?.[piexif.ExifIFD.DateTimeOriginal] || exif?.['0th']?.[piexif.ImageIFD.DateTime]
+
+        const latitude = lat ? convertDMStoDD(lat, latRef) : null
+        const longitude = lng ? convertDMStoDD(lng, lngRef) : null
+        const altitude = alt ? rationalToNumber(alt) : null
+        const datetimeStr = datetime ? bytesToString(datetime) : null
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
           resolve({
             hasExif: false,
             latitude: null,
             longitude: null,
-            altitude: null,
-            datetime: null,
+            altitude,
+            datetime: datetimeStr,
           })
           return
         }
 
-        const gpsData = piexif.load(exif)['Exif']
-        const ifd = piexif.load(exif)
-
-        // Extract latitude
-        const lat = ifd.GPS?.[piexif.GPSIFD.GPSLatitude]
-        const latRef = ifd.GPS?.[piexif.GPSIFD.GPSLatitudeRef]
-
-        // Extract longitude
-        const lng = ifd.GPS?.[piexif.GPSIFD.GPSLongitude]
-        const lngRef = ifd.GPS?.[piexif.GPSIFD.GPSLongitudeRef]
-
-        // Extract altitude
-        const alt = ifd.GPS?.[piexif.GPSIFD.GPSAltitude]
-
-        // Extract datetime
-        const datetime = ifd['0th']?.[piexif.ImageIFD.DateTime]
-
-        const latitude = lat ? convertDMStoDD(lat, latRef) : null
-        const longitude = lng ? convertDMStoDD(lng, lngRef) : null
-        const altitude = alt ? alt[0] / alt[1] : null
-        const datetimeStr = datetime ? bytesToString(datetime) : null
-
         resolve({
-          hasExif: !!(latitude && longitude),
+          hasExif: true,
           latitude,
           longitude,
           altitude,
@@ -78,8 +69,21 @@ export async function extractExifFromFile(file) {
       reject(new Error('Falha ao ler arquivo'))
     }
 
-    reader.readAsArrayBuffer(file)
+    reader.readAsDataURL(file)
   })
+}
+
+function rationalToNumber(rational) {
+  if (!Array.isArray(rational) || rational.length < 2) {
+    return null
+  }
+
+  const [num, den] = rational
+  if (!den) {
+    return null
+  }
+
+  return num / den
 }
 
 function convertDMStoDD(dms, ref) {
@@ -87,13 +91,18 @@ function convertDMStoDD(dms, ref) {
     return null
   }
 
-  const degrees = dms[0][0] / dms[0][1]
-  const minutes = dms[1][0] / dms[1][1]
-  const seconds = dms[2][0] / dms[2][1]
+  const degrees = rationalToNumber(dms[0])
+  const minutes = rationalToNumber(dms[1])
+  const seconds = rationalToNumber(dms[2])
+
+  if (![degrees, minutes, seconds].every((value) => Number.isFinite(value))) {
+    return null
+  }
 
   let decimal = degrees + minutes / 60 + seconds / 3600
+  const normalizedRef = bytesToString(ref)
 
-  if (ref === 'S' || ref === 'W') {
+  if (normalizedRef === 'S' || normalizedRef === 'W') {
     decimal = -decimal
   }
 
@@ -113,7 +122,7 @@ function bytesToString(bytes) {
 }
 
 export function formatCoordinates(lat, lng) {
-  if (!lat || !lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return null
   }
 
@@ -124,7 +133,7 @@ export function formatCoordinates(lat, lng) {
 }
 
 export function getGoogleMapsUrl(lat, lng) {
-  if (!lat || !lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return null
   }
 
