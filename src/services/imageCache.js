@@ -1,6 +1,8 @@
 const sessionImageCache = new Map()
+const pageImageCacheGlobal = new Map()
 
 let sessionCleanupRegistered = false
+let pageCleanupRegistered = false
 
 function registerSessionCleanup() {
   if (sessionCleanupRegistered || typeof window === 'undefined') {
@@ -14,19 +16,35 @@ function registerSessionCleanup() {
       }
     })
     sessionImageCache.clear()
+
+    pageImageCacheGlobal.forEach((entry) => {
+      if (entry?.objectUrl && entry.objectUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(entry.objectUrl)
+      }
+    })
+    pageImageCacheGlobal.clear()
   })
 
   sessionCleanupRegistered = true
 }
 
 async function fetchImageAsObjectUrl(url) {
-  const response = await fetch(url, { cache: 'force-cache' })
-  if (!response.ok) {
-    throw new Error(`Falha ao baixar imagem: ${response.status}`)
-  }
+  try {
+    const response = await fetch(url, { 
+      cache: 'force-cache',
+      credentials: 'omit',
+    })
+    if (!response.ok) {
+      console.warn(`Falha ao baixar imagem (status ${response.status}): ${url}`)
+      throw new Error(`Falha ao baixar imagem: ${response.status}`)
+    }
 
-  const imageBlob = await response.blob()
-  return URL.createObjectURL(imageBlob)
+    const imageBlob = await response.blob()
+    return URL.createObjectURL(imageBlob)
+  } catch (error) {
+    console.error('Erro ao fazer fetch da imagem:', error)
+    throw error
+  }
 }
 
 function normalizeSource(source) {
@@ -72,16 +90,14 @@ export async function preloadSessionImages(sources = []) {
   await Promise.allSettled(uniqueSources.map((source) => getSessionCachedImage(source)))
 }
 
-export function createPageImageCache() {
-  const pageImageCache = new Map()
-
+export function getPageImageCache() {
   async function get(source) {
     const normalizedSource = normalizeSource(source)
     if (!normalizedSource) {
       return ''
     }
 
-    const existing = pageImageCache.get(normalizedSource)
+    const existing = pageImageCacheGlobal.get(normalizedSource)
     if (existing?.resolved) {
       return existing.resolved
     }
@@ -92,18 +108,18 @@ export function createPageImageCache() {
 
     const loadPromise = fetchImageAsObjectUrl(normalizedSource)
       .then((objectUrl) => {
-        pageImageCache.set(normalizedSource, {
+        pageImageCacheGlobal.set(normalizedSource, {
           resolved: objectUrl,
           objectUrl,
         })
         return objectUrl
       })
       .catch(() => {
-        pageImageCache.delete(normalizedSource)
+        pageImageCacheGlobal.delete(normalizedSource)
         return normalizedSource
       })
 
-    pageImageCache.set(normalizedSource, { promise: loadPromise })
+    pageImageCacheGlobal.set(normalizedSource, { promise: loadPromise })
     return loadPromise
   }
 
@@ -112,19 +128,18 @@ export function createPageImageCache() {
     await Promise.allSettled(uniqueSources.map((source) => get(source)))
   }
 
-  function clear() {
-    pageImageCache.forEach((entry) => {
+  function clearAll() {
+    pageImageCacheGlobal.forEach((entry) => {
       if (entry?.objectUrl && entry.objectUrl.startsWith('blob:')) {
         URL.revokeObjectURL(entry.objectUrl)
       }
     })
-
-    pageImageCache.clear()
+    pageImageCacheGlobal.clear()
   }
 
   return {
     get,
     preload,
-    clear,
+    clearAll,
   }
 }

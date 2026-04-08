@@ -10,7 +10,7 @@
         v-if="mainPhotoPreview"
         :src="mainPhotoPreview"
         :alt="alt"
-        loading="lazy"
+        loading="eager"
         class="gallery-main"
       />
       <div v-else class="gallery-placeholder">Sem foto</div>
@@ -33,25 +33,26 @@
       >
         &gt;
       </button>
-
+      
       <div v-if="photos.length > 1" class="gallery-badge">
         {{ previewPhotoIndex + 1 }} / {{ photos.length }}
       </div>
-
-      <div v-if="photos.length > 1" class="gallery-thumbs-strip" aria-label="Miniaturas da galeria">
-        <button
-          v-for="(photo, idx) in photos"
-          :key="idx"
-          type="button"
-          class="gallery-thumb"
-          :class="{ active: idx === previewPhotoIndex }"
-          :aria-label="`Foto ${idx + 1}`"
-          @click.stop.prevent="setPreviewIndex(idx)"
-        >
-          <img :src="getThumbDisplay(idx)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
-        </button>
-      </div>
     </div>
+
+    <div v-if="photos.length > 1" class="gallery-thumbs-strip" aria-label="Miniaturas da galeria">
+      <button
+        v-for="(photo, idx) in photos"
+        :key="idx"
+        type="button"
+        class="gallery-thumb"
+        :class="{ active: idx === previewPhotoIndex }"
+        :aria-label="`Foto ${idx + 1}`"
+        @click.prevent="setPreviewIndex(idx)"
+      >
+        <img :src="getThumbDisplay(idx)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
+      </button>
+    </div>
+
 
     <Teleport to="body">
       <Transition name="modal-fade">
@@ -111,7 +112,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { createPageImageCache, getSessionCachedImage, preloadSessionImages } from '../services/imageCache'
+import { getPageImageCache, getSessionCachedImage, preloadSessionImages } from '../services/imageCache'
 
 const props = defineProps({
   photos: {
@@ -132,7 +133,7 @@ const ignoreNextOpen = ref(false)
 const cachedPreviewSources = ref([])
 const cachedThumbSources = ref([])
 const cachedModalSources = ref([])
-const pageImageCache = createPageImageCache()
+const pageImageCache = getPageImageCache()
 let preloadExecutionId = 0
 let pageScopeKey = ''
 
@@ -204,24 +205,62 @@ async function preloadGalleryImages() {
 
   const sessionSources = [...previewSources, ...thumbSources]
 
-  await Promise.allSettled([
-    preloadSessionImages(sessionSources),
-    pageImageCache.preload(modalSources),
-  ])
+  // Carregar preview + thumbs imediatamente (bloqueante)
+  await preloadSessionImages(sessionSources)
 
-  const [resolvedPreviews, resolvedThumbs, resolvedModals] = await Promise.all([
+  const [resolvedPreviews, resolvedThumbs] = await Promise.all([
     Promise.all(previewSources.map((source) => getSessionCachedImage(source))),
     Promise.all(thumbSources.map((source) => getSessionCachedImage(source))),
-    Promise.all(modalSources.map((source) => pageImageCache.get(source))),
   ])
 
   if (thisExecutionId !== preloadExecutionId) {
     return
   }
 
+  // Renderizar preview + thumbs imediatamente (layout rápido)
   cachedPreviewSources.value = resolvedPreviews
   cachedThumbSources.value = resolvedThumbs
-  cachedModalSources.value = resolvedModals
+
+  // Carregar imagens modals em background (não bloqueia renderização)
+  // Usa requestIdleCallback quando disponível, senão setTimeout
+  const scheduleBackgroundLoad = () => {
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(
+        () => {
+          if (thisExecutionId === preloadExecutionId) {
+            loadModalImagesInBackground(modalSources, thisExecutionId)
+          }
+        },
+        { timeout: 2000 }
+      )
+    } else {
+      setTimeout(() => {
+        if (thisExecutionId === preloadExecutionId) {
+          loadModalImagesInBackground(modalSources, thisExecutionId)
+        }
+      }, 100)
+    }
+  }
+
+  scheduleBackgroundLoad()
+}
+
+async function loadModalImagesInBackground(modalSources, executionId) {
+  // Pré-carregar todas as modals em background
+  await pageImageCache.preload(modalSources)
+
+  // Apenas atualizar cache renderizado se ainda é a execução atual
+  if (executionId !== preloadExecutionId) {
+    return
+  }
+
+  const resolvedModals = await Promise.all(
+    modalSources.map((source) => pageImageCache.get(source))
+  )
+
+  if (executionId === preloadExecutionId) {
+    cachedModalSources.value = resolvedModals
+  }
 }
 
 function openGallery(index) {
@@ -338,7 +377,6 @@ watch(
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
-  pageImageCache.clear()
 })
 </script>
 
@@ -409,7 +447,7 @@ onBeforeUnmount(() => {
 
 .gallery-badge {
   position: absolute;
-  bottom: 4.85rem;
+  bottom: 0.8rem;
   right: 0.8rem;
   background: rgba(31, 50, 32, 0.85);
   color: white;
@@ -420,39 +458,39 @@ onBeforeUnmount(() => {
 }
 
 .gallery-thumbs-strip {
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  bottom: 0.6rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
-  gap: 0.45rem;
-  padding: 0.55rem;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding: 0.6rem;
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(24, 36, 24, 0.62), rgba(24, 36, 24, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(10px);
-  z-index: 5;
+  background: rgba(183, 205, 169, 0.08);
+  border: 1px solid rgba(77, 99, 57, 0.12);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .gallery-thumb {
+  flex: 0 0 auto;
   border: none;
   border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
-  aspect-ratio: 1;
+  width: 60px;
+  height: 60px;
   padding: 0;
-  transition: transform 0.15s ease;
-  border: 2px solid rgba(255, 255, 255, 0.16);
+  transition: all 0.15s ease;
+  border: 2px solid rgba(77, 99, 57, 0.2);
 }
 
 .gallery-thumb:hover {
-  transform: scale(1.05);
-  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.08);
+  border-color: rgba(77, 99, 57, 0.5);
+  box-shadow: 0 2px 8px rgba(77, 99, 57, 0.2);
 }
 
 .gallery-thumb.active {
-  border-color: #b7cda9;
+  border-color: rgba(77, 99, 57, 0.8);
+  box-shadow: 0 0 0 2px rgba(183, 205, 169, 0.4);
 }
 
 .gallery-thumb img {
@@ -602,14 +640,14 @@ onBeforeUnmount(() => {
     height: 38px;
   }
 
-  .gallery-badge {
-    bottom: 4.2rem;
+  .gallery-thumbs-strip {
+    gap: 0.4rem;
+    padding: 0.5rem;
   }
 
-  .gallery-thumbs-strip {
-    grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
-    gap: 0.35rem;
-    padding: 0.45rem;
+  .gallery-thumb {
+    width: 50px;
+    height: 50px;
   }
 
   .modal-side-btn {

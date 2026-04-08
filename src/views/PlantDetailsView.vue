@@ -142,12 +142,18 @@ watch(
 <style scoped>
 .detail-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  gap: 1rem;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
-.detail-left,
+.detail-left {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .detail-right {
   min-width: 0;
 }
@@ -155,6 +161,10 @@ watch(
 @media (max-width: 960px) {
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-left {
+    width: 100%;
   }
 }
 </style>
