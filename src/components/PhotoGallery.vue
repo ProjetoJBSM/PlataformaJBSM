@@ -6,14 +6,17 @@
       @touchstart.passive="handleTouchStart"
       @touchend.passive="handleTouchEnd"
     >
-      <img
-        v-if="mainPhotoPreview"
-        :src="mainPhotoPreview"
-        :alt="alt"
-        loading="eager"
-        class="gallery-main"
-      />
-      <div v-else class="gallery-placeholder">Sem foto</div>
+      <Transition name="photo-slide" mode="out-in">
+        <img
+          v-if="mainPhotoPreview"
+          :key="previewPhotoIndex"
+          :src="mainPhotoPreview"
+          :alt="alt"
+          loading="eager"
+          class="gallery-main"
+        />
+        <div v-else key="placeholder" class="gallery-placeholder">Sem foto</div>
+      </Transition>
 
       <button
         v-if="photos.length > 1"
@@ -79,11 +82,19 @@
               &gt;
             </button>
 
-            <div class="modal-content">
-              <img
-                :src="getModalDisplay(currentPhotoIndex)"
-                :alt="`${alt} - foto ${currentPhotoIndex + 1}`"
-              />
+            <div class="modal-content" ref="modalContentRef">
+              <Transition name="photo-slide" mode="out-in">
+                <img
+                  :key="currentPhotoIndex"
+                  :src="getModalDisplay(currentPhotoIndex)"
+                  :alt="`${alt} - foto ${currentPhotoIndex + 1}`"
+                  ref="modalImageRef"
+                  class="modal-image"
+                  @touchstart.passive="handleModalTouchStart"
+                  @touchmove.passive="handleModalTouchMove"
+                  @touchend.passive="handleModalTouchEnd"
+                />
+              </Transition>
             </div>
 
             <div v-if="photos.length > 1" class="modal-info">
@@ -134,6 +145,17 @@ const cachedPreviewSources = ref([])
 const cachedThumbSources = ref([])
 const cachedModalSources = ref([])
 const pageImageCache = getPageImageCache()
+
+// Zoom variables
+const modalContentRef = ref(null)
+const modalImageRef = ref(null)
+const currentZoom = ref(1)
+const zoomOriginX = ref(0)
+const zoomOriginY = ref(0)
+const touchDistance = ref(0)
+const lastTouchDistance = ref(0)
+const isZooming = ref(false)
+
 let preloadExecutionId = 0
 let pageScopeKey = ''
 
@@ -296,6 +318,86 @@ function previousPhoto() {
 function setCurrentIndex(index) {
   currentPhotoIndex.value = index
   previewPhotoIndex.value = index
+  resetZoom()
+}
+
+function handleModalTouchStart(event) {
+  if (event.touches.length === 2) {
+    isZooming.value = true
+    const touch1 = event.touches[0]
+    const touch2 = event.touches[1]
+    
+    const dx = touch2.clientX - touch1.clientX
+    const dy = touch2.clientY - touch1.clientY
+    touchDistance.value = Math.sqrt(dx * dx + dy * dy)
+    lastTouchDistance.value = touchDistance.value
+    
+    // Calculate origin point between two fingers
+    zoomOriginX.value = (touch1.clientX + touch2.clientX) / 2
+    zoomOriginY.value = (touch1.clientY + touch2.clientY) / 2
+  }
+}
+
+function handleModalTouchMove(event) {
+  if (event.touches.length !== 2 || !isZooming.value) {
+    return
+  }
+  
+  event.preventDefault()
+  
+  const touch1 = event.touches[0]
+  const touch2 = event.touches[1]
+  
+  const dx = touch2.clientX - touch1.clientX
+  const dy = touch2.clientY - touch1.clientY
+  touchDistance.value = Math.sqrt(dx * dx + dy * dy)
+  
+  const zoomDelta = touchDistance.value / lastTouchDistance.value
+  const newZoom = currentZoom.value * zoomDelta
+  
+  // Limit zoom between 1 and 4x
+  if (newZoom >= 1 && newZoom <= 4) {
+    currentZoom.value = newZoom
+    lastTouchDistance.value = touchDistance.value
+    applyZoom()
+  }
+}
+
+function handleModalTouchEnd(event) {
+  if (event.touches.length < 2) {
+    isZooming.value = false
+    touchDistance.value = 0
+  }
+}
+
+function applyZoom() {
+  if (modalImageRef.value) {
+    const img = modalImageRef.value
+    const rect = img.getBoundingClientRect()
+    const containerRect = modalContentRef.value.getBoundingClientRect()
+    
+    // Calculate translate based on zoom origin
+    const originX = zoomOriginX.value - rect.left
+    const originY = zoomOriginY.value - rect.top
+    
+    const translateX = (containerRect.width / 2 - originX) * (currentZoom.value - 1) / currentZoom.value
+    const translateY = (containerRect.height / 2 - originY) * (currentZoom.value - 1) / currentZoom.value
+    
+    img.style.transform = `scale(${currentZoom.value}) translate(${translateX}px, ${translateY}px)`
+  }
+}
+
+function resetZoom() {
+  currentZoom.value = 1
+  zoomOriginX.value = 0
+  zoomOriginY.value = 0
+  touchDistance.value = 0
+  lastTouchDistance.value = 0
+  isZooming.value = false
+  
+  if (modalImageRef.value) {
+    modalImageRef.value.style.transform = 'scale(1) translate(0, 0)'
+  }
 }
 
 function setPreviewIndex(index) {
@@ -346,6 +448,13 @@ function handleTouchEnd(event) {
 
 watch(galleryOpen, (isOpen) => {
   document.body.style.overflow = isOpen ? 'hidden' : ''
+  if (!isOpen) {
+    resetZoom()
+  }
+})
+
+watch(currentPhotoIndex, () => {
+  resetZoom()
 })
 
 watch(
@@ -407,6 +516,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .gallery-side-btn {
@@ -578,13 +688,19 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 0.5rem 1rem;
   min-height: 300px;
+  overflow: hidden;
+  position: relative;
 }
 
-.modal-content img {
+.modal-image {
   max-width: 88vw;
   max-height: 82vh;
   object-fit: contain;
   border-radius: var(--radius-md);
+  touch-action: manipulation;
+  will-change: transform;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center center;
 }
 
 .modal-info {
@@ -632,6 +748,21 @@ onBeforeUnmount(() => {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.photo-slide-enter-active,
+.photo-slide-leave-active {
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.photo-slide-enter-from {
+  opacity: 0;
+  transform: translateX(40px);
+}
+
+.photo-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-40px);
 }
 
 @media (max-width: 600px) {

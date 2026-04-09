@@ -2,41 +2,12 @@
   <div class="container fade-up">
     <section class="section admin-shell" style="margin-top: 0.5rem">
       <header class="section-header">
-        <h1 class="section-title">Administracao do acervo</h1>
+        <h1 class="section-title">Administração do acervo</h1>
         <p class="section-subtitle">
-          Cadastre especies, importe CSV para sincronizacao e gere placas com QR Code.
+          Cadastre espécies, importe CSV para sincronização e gere placas com QR Code.
         </p>
-        <div class="form-actions" style="margin-top: 0.8rem">
-          <button class="btn btn-secondary" type="button" @click="logoutAdmin">Sair</button>
-        </div>
       </header>
 
-      <div class="admin-tabs">
-        <button
-          class="admin-tab"
-          :class="{ active: activeTab === 'records' }"
-          type="button"
-          @click="setActiveTab('records')"
-        >
-          Registros
-        </button>
-        <button
-          class="admin-tab"
-          :class="{ active: activeTab === 'csv' }"
-          type="button"
-          @click="setActiveTab('csv')"
-        >
-          Importacao CSV
-        </button>
-        <button
-          class="admin-tab"
-          :class="{ active: activeTab === 'plates' }"
-          type="button"
-          @click="setActiveTab('plates')"
-        >
-          Geracao de placas
-        </button>
-      </div>
 
       <div v-if="statusMessage" class="state-box" :class="statusError ? 'state-error' : 'state-loading'">
         {{ statusMessage }}
@@ -52,9 +23,9 @@
 
       <div v-if="activeTab === 'records'" class="split-layout">
         <aside class="panel">
-          <h3>Especies</h3>
+          <h3>Espécies</h3>
           <div class="form-actions" style="margin-top: 0.6rem">
-            <button class="btn btn-secondary" type="button" @click="startNewPlant">Nova especie</button>
+            <button class="btn btn-secondary" type="button" @click="startNewPlant">Nova espécie</button>
             <button class="btn btn-secondary" type="button" @click="loadPlants">Atualizar</button>
           </div>
 
@@ -71,12 +42,12 @@
               <div style="font-size: 0.85rem; color: var(--muted)">{{ item.id }}</div>
             </button>
 
-            <div v-if="!plants.length" class="empty-state">Nenhuma especie cadastrada.</div>
+            <div v-if="!plants.length" class="empty-state">Nenhuma espécie cadastrada.</div>
           </div>
         </aside>
 
         <div class="panel">
-          <h3>{{ selectedId ? 'Editar especie' : 'Nova especie' }}</h3>
+          <h3>{{ selectedId ? 'Editar espécie' : 'Nova espécie' }}</h3>
 
           <form class="form-grid" style="margin-top: 0.85rem" @submit.prevent="saveCurrentPlant">
             <label>
@@ -90,7 +61,7 @@
               />
             </label>
             <label>
-              <span class="field-label">Codigo</span>
+              <span class="field-label">Código</span>
               <input v-model="form.code" class="input" placeholder="Opcional" />
             </label>
             <label>
@@ -98,23 +69,23 @@
               <input v-model="form.commonName" class="input" />
             </label>
             <label>
-              <span class="field-label">Nome cientifico</span>
+              <span class="field-label">Nome científico</span>
               <input v-model="form.scientificName" class="input" />
             </label>
             <label>
-              <span class="field-label">Familia</span>
+              <span class="field-label">Família</span>
               <input v-model="form.family" class="input" />
             </label>
             <label>
               <span class="field-label">Tipo</span>
-              <input v-model="form.type" class="input" placeholder="Arvore, arbusto..." />
+              <input v-model="form.type" class="input" placeholder="Árvore, arbusto..." />
             </label>
             <label>
               <span class="field-label">Origem</span>
               <input v-model="form.origin" class="input" />
             </label>
             <label>
-              <span class="field-label">Localizacao</span>
+              <span class="field-label">Localização</span>
               <input v-model="form.location" class="input" />
             </label>
 
@@ -149,24 +120,24 @@
             </div>
 
             <label class="field-full">
-              <span class="field-label">Descricao</span>
+              <span class="field-label">Descrição</span>
               <textarea v-model="form.description" class="textarea"></textarea>
             </label>
             <label class="field-full">
-              <span class="field-label">Observacoes do curador</span>
+              <span class="field-label">Observações do curador</span>
               <textarea v-model="form.curatorNotes" class="textarea"></textarea>
             </label>
 
             <div class="field-full edit-actions-bar">
               <div class="form-actions">
-                <button v-if="hasUnsavedChanges" class="btn btn-primary" type="submit">Salvar alteracoes</button>
+                <button v-if="hasUnsavedChanges" class="btn btn-primary" type="submit">Salvar alterações</button>
                 <button
                   v-if="hasUnsavedChanges"
                   class="btn btn-secondary"
                   type="button"
                   @click="discardChanges"
                 >
-                  Descartar alteracoes
+                  Descartar alterações
                 </button>
                 <button class="btn btn-danger" type="button" :disabled="!selectedId" @click="removeCurrentPlant">
                   Excluir registro
@@ -180,7 +151,7 @@
       <div v-else-if="activeTab === 'csv'" class="panel">
         <h3>Sincronizar por CSV</h3>
         <p style="margin-top: 0.45rem; color: var(--muted)">
-          Envie um CSV com colunas conhecidas. As fotos ainda precisarao ser adicionadas manualmente.
+          Envie um CSV com colunas conhecidas. As fotos ainda precisarão ser adicionadas manualmente.
         </p>
 
         <div class="form-actions" style="margin-top: 0.8rem">
@@ -197,8 +168,8 @@
               <tr>
                 <th>ID</th>
                 <th>Nome popular</th>
-                <th>Nome cientifico</th>
-                <th>Familia</th>
+                <th>Nome científico</th>
+                <th>Família</th>
                 <th>Tipo</th>
               </tr>
             </thead>
@@ -218,7 +189,7 @@
       <div v-else class="panel">
         <h3>Gerador de placa QR</h3>
         <p style="margin-top: 0.45rem; color: var(--muted)">
-          Selecione uma especie, gere a placa e baixe como imagem PNG para impressao.
+          Selecione uma espécie, gere a placa e baixe como imagem PNG para impressão.
         </p>
 
         <div class="form-grid" style="margin-top: 0.9rem">
@@ -561,16 +532,6 @@ async function discardChanges() {
 
   startNewPlant()
   setStatus('Alteracoes descartadas.')
-}
-
-async function logoutAdmin() {
-  try {
-    if (auth) {
-      await signOut(auth)
-    }
-  } finally {
-    await router.replace({ name: 'admin-login' })
-  }
 }
 
 async function buildImagesFromUpload() {

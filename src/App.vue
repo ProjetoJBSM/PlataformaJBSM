@@ -3,13 +3,12 @@
     <header class="site-header">
       <div class="container header-content">
         <RouterLink to="/" class="brand">
-          <span class="brand-mark" aria-hidden="true">JBSM</span>
+          <img src="./assets/img/logo1.png" alt="Logo JBSM" class="brand-logo" />
           <div class="brand-text">
-            <strong>
-              Jardim Botanico UFSM
-              <span v-if="isAdminArea"> | Administracao</span>
-            </strong>
-            <small>Acervo botanico digital</small>
+            <div class="brand-name">
+              <span class="brand-botanical">Jardim Botânico <span class="brand-institution">UFSM</span></span>
+              <span v-if="isAdminArea" class="brand-admin-label">Administração</span>
+            </div>
           </div>
         </RouterLink>
 
@@ -25,7 +24,7 @@
 
         <nav class="main-nav" :class="{ open: mobileMenuOpen }">
           <RouterLink :to="{ name: 'home', hash: '#sobre' }">Sobre</RouterLink>
-          <RouterLink :to="{ name: 'home', hash: '#atracoes' }">Atracoes</RouterLink>
+          <RouterLink :to="{ name: 'home', hash: '#atrações' }">Atrações</RouterLink>
           <RouterLink :to="{ name: 'home', hash: '#visita' }">Visite</RouterLink>
           <RouterLink :to="{ name: 'collection' }">Acervo</RouterLink>
 
@@ -43,15 +42,24 @@
             :to="{ name: 'admin', query: { tab: 'csv' } }"
             :class="{ 'admin-tab-link-active': currentAdminTab === 'csv' }"
           >
-            Importacao
+            Importação
           </RouterLink>
           <RouterLink
             v-if="isAdminArea"
             :to="{ name: 'admin', query: { tab: 'plates' } }"
             :class="{ 'admin-tab-link-active': currentAdminTab === 'plates' }"
           >
-            Geracao de placas
+            Geração de placas
           </RouterLink>
+          <button
+            v-if="isAdminArea"
+            type="button"
+            class="logout-btn"
+            @click="handleLogout"
+            aria-label="Sair da administração"
+          >
+            Sair
+          </button>
         </nav>
       </div>
     </header>
@@ -71,10 +79,13 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { signOut } from 'firebase/auth'
+import { auth } from './services/firebase'
 import { useConnectionProfile } from './composables/useConnectionProfile'
 
 const route = useRoute()
+const router = useRouter()
 const mobileMenuOpen = ref(false)
 const { effectiveType, saveData } = useConnectionProfile()
 
@@ -90,6 +101,15 @@ const currentAdminTab = computed(() => {
 const lowMotionMode = computed(() => {
   return saveData.value || ['slow-2g', '2g', '3g'].includes(effectiveType.value)
 })
+
+async function handleLogout() {
+  try {
+    await signOut(auth)
+    await router.push({ name: 'home' })
+  } catch (error) {
+    console.error('Erro ao fazer logout:', error)
+  }
+}
 
 watch(
   () => route.fullPath,

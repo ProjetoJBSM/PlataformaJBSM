@@ -28,12 +28,12 @@
       <button type="button" class="upload-button" @click="$refs.fileInputRef?.click()">
         + Adicionar fotos
       </button>
-      <p class="upload-hint">ou arraste fotos aqui (maximo: {{ MAX_PHOTOS }})</p>
+      <p class="upload-hint">ou arraste fotos aqui (máximo: {{ MAX_PHOTOS }})</p>
       <p class="upload-counter">Total atual: {{ totalPhotosCount }}/{{ MAX_PHOTOS }}</p>
     </div>
 
     <div v-if="existingPhotos.length" class="uploaded-photos">
-      <h4>Fotos ja vinculadas ao registro ({{ existingPhotos.length }})</h4>
+      <h4>Fotos já vinculadas ao registro ({{ existingPhotos.length }})</h4>
 
       <div class="photo-list">
         <div v-for="(photo, idx) in existingPhotos" :key="photo.id" class="photo-item">
@@ -139,13 +139,13 @@ async function processFiles(files) {
   const validFiles = files.filter((f) => f.type.startsWith('image/'))
 
   if (validFiles.length !== files.length) {
-    error.value = `${files.length - validFiles.length} arquivo(s) nao sao imagens e foram ignorados.`
+    error.value = `${files.length - validFiles.length} arquivo(s) não são imagens e foram ignorados.`
   }
 
   const availableSlots = Math.max(0, MAX_PHOTOS - totalPhotosCount.value)
 
   if (availableSlots <= 0) {
-    error.value = `Limite maximo de ${MAX_PHOTOS} fotos atingido.`
+    error.value = `Limite máximo de ${MAX_PHOTOS} fotos atingido.`
     return
   }
 
@@ -367,10 +367,9 @@ defineExpose({
 }
 
 .upload-processing-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(24, 36, 24, 0.52);
-  border-radius: var(--radius-md);
   z-index: 20;
   display: flex;
   align-items: center;

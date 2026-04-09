@@ -124,7 +124,7 @@ async function handleLogin() {
   successMessage.value = ''
 
   if (!hasFirebaseConfig || !auth) {
-    errorMessage.value = 'Firebase nao configurado para autenticacao neste ambiente.'
+    errorMessage.value = 'Firebase não configurado para autenticação neste ambiente.'
     return
   }
 
@@ -136,7 +136,7 @@ async function handleLogin() {
 
     if (tokenResult?.claims?.admin !== true) {
       await signOut(auth)
-      errorMessage.value = 'Usuario sem permissao de administrador.'
+      errorMessage.value = 'Usuário sem permissão de administrador.'
       return
     }
 
@@ -163,18 +163,18 @@ function normalizeResetError(error) {
   const code = error?.code || ''
 
   if (code === 'auth/invalid-email') {
-    return 'Informe um email valido para redefinir a senha.'
+    return 'Informe um email válido para redefinir a senha.'
   }
 
   if (code === 'auth/user-not-found') {
-    return 'Nao encontramos um usuario com esse email.'
+    return 'Não encontramos um usuário com esse email.'
   }
 
   if (code === 'auth/too-many-requests') {
-    return 'Muitas solicitacoes de redefinicao. Tente novamente em alguns minutos.'
+    return 'Muitas solicitações de redefinição. Tente novamente em alguns minutos.'
   }
 
-  return 'Nao foi possivel enviar o email de redefinicao agora.'
+  return 'Não foi possível enviar o email de redefinição agora.'
 }
 
 async function handleResetPassword() {
@@ -182,13 +182,13 @@ async function handleResetPassword() {
   successMessage.value = ''
 
   if (!hasFirebaseConfig || !auth) {
-    errorMessage.value = 'Firebase nao configurado para envio de redefinicao.'
+    errorMessage.value = 'Firebase não configurado para envio de redefinição.'
     return
   }
 
   const targetEmail = email.value.trim()
   if (!targetEmail) {
-    errorMessage.value = 'Digite seu email para receber o link de redefinicao.'
+    errorMessage.value = 'Digite seu email para receber o link de redefinição.'
     return
   }
 
@@ -196,7 +196,7 @@ async function handleResetPassword() {
 
   try {
     await sendPasswordResetEmail(auth, targetEmail)
-    successMessage.value = 'Email de redefinicao enviado. Verifique sua caixa de entrada e spam.'
+    successMessage.value = 'Email de redefinição enviado. Verifique sua caixa de entrada e spam.'
   } catch (error) {
     errorMessage.value = normalizeResetError(error)
   } finally {
