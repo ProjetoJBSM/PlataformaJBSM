@@ -14,7 +14,7 @@
     </div>
 
     <div v-if="latitude && longitude" ref="mapContainer" class="map-container"></div>
-    <div v-else class="map-placeholder">Localização nao disponivel</div>
+    <div v-else class="map-placeholder">Localização não disponível</div>
   </div>
 </template>
 

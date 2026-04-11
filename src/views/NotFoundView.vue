@@ -2,9 +2,9 @@
   <div class="container fade-up">
     <section class="section">
       <div class="empty-state">
-        <h1>Pagina nao encontrada</h1>
+        <h1>Página não encontrada</h1>
         <p style="margin-top: 0.6rem">
-          O endereco informado nao existe ou foi movido. Use o menu para voltar a navegacao.
+          O endereço informado não existe ou foi movido. Use o menu para voltar à navegação.
         </p>
         <div class="form-actions" style="justify-content: center; margin-top: 0.9rem">
           <RouterLink class="btn btn-primary" to="/">Ir para a home</RouterLink>

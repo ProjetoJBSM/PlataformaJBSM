@@ -65,12 +65,16 @@
     </header>
 
     <main class="site-main">
-      <RouterView />
+      <RouterView v-slot="{ Component, route: currentRoute }">
+        <Transition name="page-fade" mode="out-in" appear>
+          <component :is="Component" :key="currentRoute.path" />
+        </Transition>
+      </RouterView>
     </main>
 
     <footer class="site-footer">
       <div class="container footer-content">
-        <p>Jardim Botanico de Santa Maria - UFSM</p>
+        <p>Jardim Botânico de Santa Maria - UFSM</p>
         <p>Av. Roraima, 1000 - Camobi, Santa Maria/RS</p>
       </div>
     </footer>

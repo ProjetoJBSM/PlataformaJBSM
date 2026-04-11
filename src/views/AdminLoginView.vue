@@ -4,7 +4,7 @@
       <header class="section-header">
         <h1 class="section-title">Acesso administrativo</h1>
         <p class="section-subtitle">
-          Entre com seu usuario administrador para acessar os recursos de gestao do acervo.
+          Entre com seu usuário administrador para acessar os recursos de gestão do acervo.
         </p>
       </header>
 
@@ -84,11 +84,11 @@ const successMessage = ref('')
 
 const infoMessage = computed(() => {
   if (!hasFirebaseConfig || route.query.reason === 'firebase-config') {
-    return 'Firebase nao configurado no build atual. Verifique os secrets VITE_FIREBASE_* do GitHub Actions.'
+    return 'Firebase não configurado no build atual. Verifique os secrets VITE_FIREBASE_* do GitHub Actions.'
   }
 
   if (route.query.reason === 'not-admin') {
-    return 'Sua conta esta autenticada, mas nao possui permissao de administrador.'
+    return 'Sua conta está autenticada, mas não possui permissão de administrador.'
   }
 
   return ''
@@ -109,7 +109,7 @@ function normalizeAuthError(error) {
   const code = error?.code || ''
 
   if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-    return 'Email ou senha invalidos.'
+    return 'Email ou senha inválidos.'
   }
 
   if (code === 'auth/too-many-requests') {

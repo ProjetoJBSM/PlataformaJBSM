@@ -4,15 +4,15 @@
       <div class="loading-dialog">
         <div class="spinner" aria-hidden="true"></div>
         <strong>Carregando acervo</strong>
-        <p>{{ loadingMessage || 'Buscando especies...' }}</p>
+        <p>{{ loadingMessage || 'Buscando espécies...' }}</p>
       </div>
     </div>
 
     <section class="section" style="margin-top: 0.5rem">
       <header class="section-header">
-        <h1 class="section-title">Acervo de especies</h1>
+        <h1 class="section-title">Acervo de espécies</h1>
         <p class="section-subtitle">
-          Busque por nome, codigo, familia ou origem. Os resultados sao atualizados em tempo real.
+          Busque por nome, código, família ou origem. Os resultados são atualizados em tempo real.
         </p>
       </header>
 
@@ -28,7 +28,7 @@
         </label>
 
         <label>
-          <span class="field-label">Familia</span>
+          <span class="field-label">Família</span>
           <select v-model="family" class="select">
             <option value="">Todas</option>
             <option v-for="item in families" :key="item" :value="item">{{ item }}</option>
@@ -68,12 +68,12 @@
               style="text-decoration: none"
             >
               <h3>{{ plant.commonName || 'Sem nome popular' }}</h3>
-              <p><strong>Cientifico:</strong> {{ plant.scientificName || 'Nao informado' }}</p>
-              <p><strong>Codigo:</strong> {{ plant.code || plant.id }}</p>
-              <p><strong>Familia:</strong> {{ plant.family || 'Nao informada' }}</p>
+              <p><strong>Científíco:</strong> {{ plant.scientificName || 'Não informado' }}</p>
+              <p><strong>Código:</strong> {{ plant.code || plant.id }}</p>
+              <p><strong>Família:</strong> {{ plant.family || 'Não informada' }}</p>
               <div class="tag-row" style="margin-top: 0.6rem">
-                <span class="tag">{{ plant.type || 'Tipo nao informado' }}</span>
-                <span class="tag">{{ plant.origin || 'Origem nao informada' }}</span>
+                <span class="tag">{{ plant.type || 'Tipo não informado' }}</span>
+                <span class="tag">{{ plant.origin || 'Origem não informada' }}</span>
               </div>
             </RouterLink>
           </div>

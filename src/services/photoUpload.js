@@ -6,15 +6,15 @@ const SUPPORTED_COMPRESS_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp
 
 export async function uploadPlantPhoto(file, plantId, photoIndex = 0, variant = 'original') {
   if (!storage) {
-    throw new Error('Firebase Storage nao esta configurado')
+    throw new Error('Firebase Storage não está configurado')
   }
 
   if (!file || !(file instanceof File)) {
-    throw new Error('Arquivo invalido')
+    throw new Error('Arquivo inválido')
   }
 
   if (!plantId) {
-    throw new Error('ID da especie eh obrigatorio')
+    throw new Error('ID da espécie é obrigatório')
   }
 
   const timestamp = Date.now()
@@ -43,11 +43,11 @@ export async function uploadPlantPhoto(file, plantId, photoIndex = 0, variant = 
 
 export async function deletePlantPhoto(storagePath) {
   if (!storage) {
-    throw new Error('Firebase Storage nao esta configurado')
+    throw new Error('Firebase Storage não está configurado')
   }
 
   if (!storagePath) {
-    throw new Error('Caminho do arquivo eh obrigatorio')
+    throw new Error('Caminho do arquivo é obrigatório')
   }
 
   const fileRef = ref(storage, storagePath)
@@ -87,7 +87,7 @@ export async function compressImage(file, maxWidth = 1920, maxHeight = 1920, qua
 
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error('Nao foi possivel obter contexto 2D do canvas'))
+          reject(new Error('Não foi possível obter contexto 2D do canvas'))
           return
         }
 

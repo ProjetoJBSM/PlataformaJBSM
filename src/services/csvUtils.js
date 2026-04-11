@@ -104,7 +104,7 @@ export function normalizeCsvRow(row) {
       low: imageLow,
       medium: imageMedium || imageLow,
       high: imageHigh || imageMedium || imageLow,
-      alt: commonName || scientificName || 'Imagem da especie',
+      alt: commonName || scientificName || 'Imagem da espécie',
     })
   }
 

@@ -6,11 +6,11 @@ export const mockPlants = [
     scientificName: 'Schinus terebinthifolia',
     family: 'Anacardiaceae',
     origin: 'Nativa do Brasil',
-    type: 'Arvore',
+    type: 'Árvore',
     description:
-      'Especie nativa de alta relevancia ecologica e paisagistica. Produz frutos apreciados por aves e contribui para restauracao de areas degradadas.',
+      'Espécie nativa de alta relevância ecológica e paisagística. Produz frutos apreciados por aves e contribui para restauração de áreas degradadas.',
     location: 'Setor de nativas - trilha central',
-    curatorNotes: 'Monitorar frutificacao entre setembro e novembro.',
+    curatorNotes: 'Monitorar frutificação entre setembro e novembro.',
     images: [
       {
         low: 'https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=480&q=65',
@@ -27,18 +27,18 @@ export const mockPlants = [
     commonName: 'Ipê-amarelo',
     scientificName: 'Handroanthus albus',
     family: 'Bignoniaceae',
-    origin: 'America do Sul',
-    type: 'Arvore',
+    origin: 'América do Sul',
+    type: 'Árvore',
     description:
-      'Arvore simbolica da flora brasileira, conhecida pela floracao intensa de coloração amarela durante o inverno.',
+      'Árvore simbólica da flora brasileira, conhecida pela floração intensa de coloração amarela durante o inverno.',
     location: 'Bosque principal - ala sul',
-    curatorNotes: 'Podas leves no periodo de dormencia.',
+    curatorNotes: 'Podas leves no período de dormência.',
     images: [
       {
         low: 'https://images.unsplash.com/photo-1463143296037-1a1f26e6a060?auto=format&fit=crop&w=480&q=65',
         medium: 'https://images.unsplash.com/photo-1463143296037-1a1f26e6a060?auto=format&fit=crop&w=920&q=72',
         high: 'https://images.unsplash.com/photo-1463143296037-1a1f26e6a060?auto=format&fit=crop&w=1400&q=78',
-        alt: 'Floracao amarela de ipe',
+        alt: 'Floração amarela de ipê',
       },
     ],
     updatedAt: new Date().toISOString(),

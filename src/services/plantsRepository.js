@@ -63,7 +63,7 @@ function writePlantsCache(plants) {
       })
     )
   } catch {
-    // Ignora erro de quota/localStorage indisponivel.
+    // Ignora erro de quota/localStorage indisponível.
   }
 }
 

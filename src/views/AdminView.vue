@@ -596,7 +596,7 @@ function handleGeoLocationDetected(event) {
   if (isFiniteNumber(event.latitude) && isFiniteNumber(event.longitude)) {
     form.geoLocation.latitude = event.latitude
     form.geoLocation.longitude = event.longitude
-    setStatus('Geolocalizacao importada da foto!')
+    setStatus('Geolocalização importada da foto!')
   }
 }
 
@@ -637,7 +637,7 @@ function selectPlant(item) {
 }
 
 async function loadPlants() {
-  pushBusy('Carregando especies...')
+  pushBusy('Carregando espécies...')
 
   try {
     plants.value = await fetchPlants()
@@ -652,7 +652,7 @@ async function loadPlants() {
       clearCanvas()
     }
   } catch (err) {
-    setStatus(err instanceof Error ? err.message : 'Falha ao carregar especies.', true)
+    setStatus(err instanceof Error ? err.message : 'Falha ao carregar espécies.', true)
   } finally {
     popBusy()
   }
@@ -662,7 +662,7 @@ async function saveCurrentPlant() {
   clearStatus()
 
   if (!form.id.trim()) {
-    setStatus('ID da especie eh obrigatorio.', true)
+    setStatus('ID da espécie é obrigatório.', true)
     return
   }
 
@@ -701,7 +701,7 @@ async function saveCurrentPlant() {
     }
 
     if (failedRemovals.length) {
-      setStatus('Registro salvo, mas algumas fotos antigas nao puderam ser removidas do Storage.', true)
+      setStatus('Registro salvo, mas algumas fotos antigas não puderam ser removidas do Storage.', true)
       return
     }
 
@@ -735,7 +735,7 @@ async function removeCurrentPlant() {
     startNewPlant()
 
     if (failedRemovals.length) {
-      setStatus('Registro removido, mas algumas fotos nao puderam ser excluidas do Storage.', true)
+      setStatus('Registro removido, mas algumas fotos não puderam ser excluídas do Storage.', true)
       return
     }
 
@@ -761,7 +761,7 @@ async function handleCsvUpload(event) {
       .map((row) => normalizeCsvRow(row))
       .filter((row) => Boolean(row.id))
 
-    setStatus(`${csvRows.value.length} registro(s) prontos para importacao.`)
+    setStatus(`${csvRows.value.length} registro(s) prontos para importação.`)
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao ler CSV.', true)
   }
@@ -786,7 +786,7 @@ async function importCsvRows() {
   try {
     const result = await importPlantsBatch(csvRows.value)
     await loadPlants()
-    setStatus(`Importacao concluida: ${result.total} registro(s) em modo ${result.mode}.`)
+    setStatus(`Importação concluída: ${result.total} registro(s) em modo ${result.mode}.`)
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Falha ao importar CSV.', true)
   } finally {
@@ -953,7 +953,7 @@ async function renderPlate() {
   ctx.font = 'italic 24px Merriweather, serif'
   textY = drawWrappedText(
     ctx,
-    plant.scientificName || 'Nome cientifico nao informado',
+    plant.scientificName || 'Nome científíco não informado',
     textX,
     textY,
     textMaxWidth,
@@ -968,7 +968,7 @@ async function renderPlate() {
   textY = drawWrappedText(ctx, `URL: ${getSpeciesUrl(plant.id)}`, textX, textY, textMaxWidth, 24)
 
   if (plant.family) {
-    ctx.fillText(`Familia: ${plant.family}`, textX, textY + 4)
+    ctx.fillText(`Família: ${plant.family}`, textX, textY + 4)
   }
 }
 

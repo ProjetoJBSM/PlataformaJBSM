@@ -3,8 +3,8 @@
     <div v-if="loading" class="loading-overlay" role="status" aria-live="polite">
       <div class="loading-dialog">
         <div class="spinner" aria-hidden="true"></div>
-        <strong>Carregando especie</strong>
-        <p>Buscando fotos e informacoes da planta.</p>
+        <strong>Carregando espécie</strong>
+        <p>Buscando fotos e informações da planta.</p>
       </div>
     </div>
 
@@ -13,7 +13,7 @@
 
       <div v-if="error" class="state-box state-error" style="margin-top: 1rem">{{ error }}</div>
       <div v-else-if="!loading && !plant" class="empty-state" style="margin-top: 1rem">
-        Especie nao encontrada.
+        Espécie não encontrada.
       </div>
 
       <article v-else-if="!loading" class="section" style="margin-top: 1rem">
@@ -29,33 +29,33 @@
             <div class="panel">
               <h1>{{ plant.commonName || 'Sem nome popular' }}</h1>
               <p style="margin-top: 0.35rem; color: var(--muted)">
-                {{ plant.scientificName || 'Nome cientifico nao informado' }}
+                {{ plant.scientificName || 'Nome científíco não informado' }}
               </p>
 
               <div class="tag-row" style="margin-top: 0.75rem">
-                <span class="tag">{{ plant.type || 'Tipo nao informado' }}</span>
-                <span class="tag">{{ plant.family || 'Familia nao informada' }}</span>
+                <span class="tag">{{ plant.type || 'Tipo não informado' }}</span>
+                <span class="tag">{{ plant.family || 'Família não informada' }}</span>
                 <span class="tag">{{ profileLabel }}</span>
               </div>
 
-              <p style="margin-top: 0.9rem">{{ plant.description || 'Sem descricao cadastrada.' }}</p>
+              <p style="margin-top: 0.9rem">{{ plant.description || 'Sem descrição cadastrada.' }}</p>
 
               <dl class="meta-list" style="margin-top: 1rem">
                 <div class="meta-item">
-                  <dt class="meta-label">Codigo</dt>
+                  <dt class="meta-label">Código</dt>
                   <dd>{{ plant.code || plant.id }}</dd>
                 </div>
                 <div class="meta-item">
                   <dt class="meta-label">Origem</dt>
-                  <dd>{{ plant.origin || 'Nao informada' }}</dd>
+                  <dd>{{ plant.origin || 'Não informada' }}</dd>
                 </div>
                 <div class="meta-item">
-                  <dt class="meta-label">Localizacao no jardim</dt>
-                  <dd>{{ plant.location || 'Nao informada' }}</dd>
+                  <dt class="meta-label">Localização no jardim</dt>
+                  <dd>{{ plant.location || 'Não informada' }}</dd>
                 </div>
                 <div class="meta-item">
                   <dt class="meta-label">Observacoes</dt>
-                  <dd>{{ plant.curatorNotes || 'Sem observacoes' }}</dd>
+                  <dd>{{ plant.curatorNotes || 'Sem observações' }}</dd>
                 </div>
               </dl>
             </div>
@@ -123,7 +123,7 @@ async function loadPlant() {
   try {
     plant.value = await getPlantById(route.params.id)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Falha ao carregar especie.'
+    error.value = err instanceof Error ? err.message : 'Falha ao carregar espécie.'
   } finally {
     loading.value = false
   }
