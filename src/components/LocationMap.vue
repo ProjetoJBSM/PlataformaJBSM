@@ -3,7 +3,7 @@
     <div class="map-header">
       <h3>Localização no Jardim</h3>
       <a
-        v-if="latitude && longitude"
+        v-if="hasCoordinates"
         :href="googleMapsUrl"
         target="_blank"
         rel="noreferrer"
@@ -13,14 +13,15 @@
       </a>
     </div>
 
-    <div v-if="latitude && longitude" ref="mapContainer" class="map-container"></div>
+    <div v-if="hasCoordinates" ref="mapContainer" class="map-container">
+      <div v-if="!mapReady" class="map-loading">Carregando mapa...</div>
+    </div>
     <div v-else class="map-placeholder">Localização não disponível</div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import L from 'leaflet'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   latitude: {
@@ -38,18 +39,71 @@ const props = defineProps({
 })
 
 const mapContainer = ref(null)
+const mapReady = ref(false)
+
 let map = null
+let L = null
+let mapInitScheduled = false
+let mapInitTimer = null
+let mapIdleHandle = null
+let resizeObserver = null
+
+const hasCoordinates = computed(() => {
+  const lat = Number(props.latitude)
+  const lng = Number(props.longitude)
+  return Number.isFinite(lat) && Number.isFinite(lng)
+})
 
 const googleMapsUrl = computed(() => {
-  if (!props.latitude || !props.longitude) {
+  if (!hasCoordinates.value) {
     return null
   }
+
   return `https://maps.google.com/?q=${props.latitude},${props.longitude}`
 })
 
-function initMap() {
-  if (!mapContainer.value || !props.latitude || !props.longitude) {
+function getCoords() {
+  return {
+    lat: Number(props.latitude),
+    lng: Number(props.longitude),
+  }
+}
+
+async function ensureLeafletLoaded() {
+  if (L) {
+    return L
+  }
+
+  await import('leaflet/dist/leaflet.css')
+  const leafletModule = await import('leaflet')
+  L = leafletModule.default
+  return L
+}
+
+function clearMapInitSchedule() {
+  if (typeof window === 'undefined') {
     return
+  }
+
+  if (mapInitTimer !== null) {
+    window.clearTimeout(mapInitTimer)
+    mapInitTimer = null
+  }
+
+  if (mapIdleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(mapIdleHandle)
+    mapIdleHandle = null
+  }
+
+  mapInitScheduled = false
+}
+
+function destroyMap() {
+  clearMapInitSchedule()
+
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
   }
 
   if (map) {
@@ -57,48 +111,129 @@ function initMap() {
     map = null
   }
 
-  const lat = Number(props.latitude)
-  const lng = Number(props.longitude)
+  mapReady.value = false
+}
 
-  if (isNaN(lat) || isNaN(lng)) {
+function setupResizeObserver() {
+  if (typeof window === 'undefined' || !mapContainer.value || typeof ResizeObserver === 'undefined') {
     return
   }
 
-  map = L.map(mapContainer.value).setView([lat, lng], 18)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+  }
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  resizeObserver = new ResizeObserver(() => {
+    if (map) {
+      map.invalidateSize()
+    }
+  })
+
+  resizeObserver.observe(mapContainer.value)
+}
+
+async function initMap() {
+  if (!hasCoordinates.value || !mapContainer.value || map) {
+    return
+  }
+
+  mapInitScheduled = false
+
+  const { lat, lng } = getCoords()
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return
+  }
+
+  const Leaflet = await ensureLeafletLoaded()
+  await nextTick()
+
+  if (!mapContainer.value) {
+    return
+  }
+
+  map = Leaflet.map(mapContainer.value, {
+    zoomControl: true,
+    attributionControl: true,
+    scrollWheelZoom: false,
+  }).setView([lat, lng], 18)
+
+  Leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(map)
 
-  const marker = L.marker([lat, lng], {
-    icon: L.icon({
-      iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231f3220"><path d="M12 0C7.58 0 4 3.58 4 8c0 5 8 16 8 16s8-11 8-16c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg>',
-      iconSize: [32, 32],
-      iconAnchor: [16, 32],
-      popupAnchor: [0, -32],
+  const marker = Leaflet.marker([lat, lng], {
+    icon: Leaflet.divIcon({
+      className: 'plant-pin-wrapper',
+      html: '<span class="plant-pin-dot"></span>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
     }),
   }).addTo(map)
 
   marker.bindPopup(props.plantName)
 
+  map.whenReady(() => {
+    mapReady.value = true
+    map.invalidateSize()
+  })
+
+  requestAnimationFrame(() => {
+    if (map) {
+      map.invalidateSize()
+    }
+  })
+
   setTimeout(() => {
     if (map) {
       map.invalidateSize()
     }
-  }, 100)
+  }, 250)
+
+  setupResizeObserver()
+}
+
+function scheduleMapInit() {
+  if (!hasCoordinates.value || map || mapInitScheduled || typeof window === 'undefined') {
+    return
+  }
+
+  mapInitScheduled = true
+
+  const runInit = () => {
+    void initMap()
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    mapIdleHandle = window.requestIdleCallback(runInit, { timeout: 1800 })
+    return
+  }
+
+  mapInitTimer = window.setTimeout(runInit, 500)
 }
 
 onMounted(() => {
-  if (props.latitude && props.longitude) {
-    initMap()
+  if (!hasCoordinates.value) {
+    return
   }
+
+  scheduleMapInit()
 })
 
-watch([() => props.latitude, () => props.longitude], () => {
-  if (props.latitude && props.longitude) {
-    initMap()
+watch(
+  () => [props.latitude, props.longitude],
+  async () => {
+    destroyMap()
+    await nextTick()
+
+    if (hasCoordinates.value) {
+      scheduleMapInit()
+    }
   }
+)
+
+onBeforeUnmount(() => {
+  destroyMap()
 })
 </script>
 
@@ -146,8 +281,10 @@ watch([() => props.latitude, () => props.longitude], () => {
 .map-container {
   height: 300px;
   width: 100%;
+  position: relative;
 }
 
+.map-loading,
 .map-placeholder {
   height: 300px;
   display: flex;
@@ -158,11 +295,24 @@ watch([() => props.latitude, () => props.longitude], () => {
   background: linear-gradient(180deg, #f2f5ed, #e8f0e0);
 }
 
-@media (max-width: 600px) {
-  .map-container {
-    height: 240px;
-  }
+:global(.plant-pin-wrapper) {
+  background: transparent;
+  border: none;
+}
 
+:global(.plant-pin-dot) {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1f3220;
+  border: 2px solid #f4f5ee;
+  box-shadow: 0 0 0 3px rgba(31, 50, 32, 0.24);
+  display: block;
+}
+
+@media (max-width: 600px) {
+  .map-container,
+  .map-loading,
   .map-placeholder {
     height: 240px;
   }

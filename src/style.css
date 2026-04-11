@@ -1,17 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap');
+@font-face {
+  font-family: 'Manrope';
+  src: url('./assets/fonts/Manrope-VariableFont_wght.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
 
 @font-face {
   font-family: 'MyriadPro';
-  src: url('./assets/fonts/MyriadProRegular.c59859ce.ttf') format('truetype');
+  src: url('./assets/fonts/MyriadProRegular.c59859ce.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
   font-family: 'ZapfHumnst';
-  src: url('./assets/fonts/ZapfHumnstRegular.a4f16afa.ttf') format('truetype');
+  src: url('./assets/fonts/ZapfHumnstRegular.a4f16afa.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
 }
 
 :root {
@@ -32,7 +40,7 @@
   --radius-lg: 24px;
   --shadow-soft: 0 16px 40px rgba(22, 40, 22, 0.08);
   --shadow-deep: 0 24px 48px rgba(14, 30, 15, 0.16);
-  --title-font: 'Merriweather', serif;
+  --title-font: 'MyriadPro', serif;
   --body-font: 'Manrope', sans-serif;
 }
 

@@ -6,19 +6,16 @@
       @touchstart.passive="handleTouchStart"
       @touchend.passive="handleTouchEnd"
     >
-      <div v-if="hasPhotos" class="gallery-track-wrap">
-        <div class="gallery-track" :style="previewTrackStyle">
-          <figure v-for="(_, idx) in photos" :key="`preview-${idx}`" class="gallery-slide">
-            <img
-              :src="getPreviewDisplay(idx)"
-              :alt="`${alt} - foto ${idx + 1}`"
-              loading="eager"
-              class="gallery-main"
-              draggable="false"
-            />
-          </figure>
-        </div>
-      </div>
+      <img
+        v-if="mainPhotoPreview"
+        :src="mainPhotoPreview"
+        :alt="alt"
+        :fetchpriority="previewPhotoIndex === 0 ? 'high' : 'auto'"
+        loading="eager"
+        decoding="async"
+        class="gallery-main"
+        draggable="false"
+      />
       <div v-else class="gallery-placeholder">Sem foto</div>
 
       <button
@@ -45,7 +42,7 @@
       </div>
     </div>
 
-    <div v-if="hasMultiplePhotos" class="gallery-thumbs-strip" aria-label="Miniaturas da galeria">
+    <div v-if="hasMultiplePhotos && showPreviewThumbs" class="gallery-thumbs-strip" aria-label="Miniaturas da galeria">
       <button
         v-for="(_, idx) in photos"
         :key="`thumb-${idx}`"
@@ -55,7 +52,7 @@
         :aria-label="`Foto ${idx + 1}`"
         @click.prevent="setPreviewIndex(idx)"
       >
-        <img :src="getThumbDisplay(idx)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" />
+        <img :src="getThumbDisplay(idx)" :alt="`${alt} - foto ${idx + 1}`" loading="lazy" decoding="async" />
       </button>
     </div>
 
@@ -91,23 +88,23 @@
 
             <div
               class="modal-content"
-              ref="modalContentRef"
-              @touchstart="handleModalTouchStart"
-              @touchmove="handleModalTouchMove"
-              @touchend="handleModalTouchEnd"
-              @touchcancel="handleModalTouchEnd"
+              @touchstart.passive="handleModalTouchStart"
+              @touchend.passive="handleModalTouchEnd"
+              @touchcancel.passive="handleModalTouchEnd"
             >
-              <div class="modal-track" :class="{ 'is-zoomed': isModalZoomed }" :style="modalTrackStyle">
-                <figure v-for="(_, idx) in photos" :key="`modal-${idx}`" class="modal-slide">
-                  <img
-                    :src="getModalDisplay(idx)"
-                    :alt="`${alt} - foto ${idx + 1}`"
-                    :ref="(el) => setModalImageRef(el, idx)"
-                    class="modal-image"
-                    draggable="false"
-                  />
-                </figure>
-              </div>
+              <Transition :name="modalTransitionName" mode="out-in">
+                <img
+                  v-if="currentModalPhoto"
+                  :key="currentPhotoIndex"
+                  :src="currentModalPhoto"
+                  :alt="`${alt} - foto ${currentPhotoIndex + 1}`"
+                  class="modal-image"
+                  loading="eager"
+                  decoding="async"
+                  draggable="false"
+                />
+                <div v-else key="modal-placeholder" class="modal-placeholder">Sem foto</div>
+              </Transition>
             </div>
 
             <div v-if="hasMultiplePhotos" class="modal-info">
@@ -124,7 +121,7 @@
                 @click="setCurrentIndex(idx)"
                 :aria-label="`Foto ${idx + 1}`"
               >
-                <img :src="getThumbDisplay(idx)" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" />
+                <img :src="getThumbDisplay(idx)" :alt="`${alt} - thumbnail ${idx + 1}`" loading="lazy" decoding="async" />
               </button>
             </div>
           </div>
@@ -135,8 +132,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { getPageImageCache, getSessionCachedImage, preloadSessionImages } from '../services/imageCache'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
   photos: {
@@ -153,56 +149,21 @@ const galleryOpen = ref(false)
 const currentPhotoIndex = ref(0)
 const previewPhotoIndex = ref(0)
 const touchStartX = ref(null)
-const ignoreNextOpen = ref(false)
-const cachedPreviewSources = ref([])
-const cachedThumbSources = ref([])
-const cachedModalSources = ref([])
-const pageImageCache = getPageImageCache()
-
-// Zoom variables
-const modalContentRef = ref(null)
-const modalImageRefs = ref([])
-const currentZoom = ref(1)
-const zoomOriginX = ref(0)
-const zoomOriginY = ref(0)
-const touchDistance = ref(0)
-const lastTouchDistance = ref(0)
-const isZooming = ref(false)
 const modalTouchStartX = ref(null)
-const modalTouchStartY = ref(null)
+const ignoreNextOpen = ref(false)
+const modalDirection = ref('next')
+const showPreviewThumbs = ref(false)
 
-let preloadExecutionId = 0
-let pageScopeKey = ''
+let previewThumbsTimer = null
+let previewThumbsIdleHandle = null
 
 const hasPhotos = computed(() => (props.photos?.length || 0) > 0)
 const hasMultiplePhotos = computed(() => (props.photos?.length || 0) > 1)
-const isModalZoomed = computed(() => currentZoom.value > 1)
-
-const previewTrackStyle = computed(() => ({
-  transform: `translate3d(${-previewPhotoIndex.value * 100}%, 0, 0)`,
-  '--slide-duration': `${getSlideDuration()}ms`,
-}))
-
-const modalTrackStyle = computed(() => ({
-  transform: `translate3d(${-currentPhotoIndex.value * 100}%, 0, 0)`,
-  '--slide-duration': isModalZoomed.value ? '0ms' : `${getSlideDuration()}ms`,
-}))
-
-function getSlideDuration() {
-  if (typeof document !== 'undefined' && document.body.classList.contains('low-motion')) {
-    return 0
-  }
-
-  if (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  ) {
-    return 0
-  }
-
-  return 240
-}
+const mainPhotoPreview = computed(() => getPreviewDisplay(previewPhotoIndex.value))
+const currentModalPhoto = computed(() => getModalDisplay(currentPhotoIndex.value))
+const modalTransitionName = computed(() =>
+  modalDirection.value === 'prev' ? 'modal-photo-prev' : 'modal-photo-next'
+)
 
 function normalizeIndex(index) {
   const length = props.photos?.length || 0
@@ -250,98 +211,53 @@ function getThumbSrc(photo) {
 }
 
 function getPreviewDisplay(index) {
-  return cachedPreviewSources.value[index] || getPreviewSrc(props.photos?.[index])
+  return getPreviewSrc(props.photos?.[index])
 }
 
 function getThumbDisplay(index) {
-  return cachedThumbSources.value[index] || getThumbSrc(props.photos?.[index])
+  return getThumbSrc(props.photos?.[index])
 }
 
 function getModalDisplay(index) {
-  return cachedModalSources.value[index] || getModalSrc(props.photos?.[index])
+  return getModalSrc(props.photos?.[index])
 }
 
-async function preloadGalleryImages() {
-  const photos = Array.isArray(props.photos) ? props.photos : []
-  const thisExecutionId = ++preloadExecutionId
-
-  if (!photos.length) {
-    cachedPreviewSources.value = []
-    cachedThumbSources.value = []
-    cachedModalSources.value = []
-    pageScopeKey = ''
-    pageImageCache.clear()
+function clearPreviewThumbsSchedule() {
+  if (typeof window === 'undefined') {
     return
   }
 
-  const previewSources = photos.map((photo) => getPreviewSrc(photo))
-  const thumbSources = photos.map((photo) => getThumbSrc(photo))
-  const modalSources = photos.map((photo) => getModalSrc(photo))
-  const nextPageScopeKey = modalSources.join('|')
-
-  if (pageScopeKey && pageScopeKey !== nextPageScopeKey) {
-    pageImageCache.clear()
-    cachedModalSources.value = []
+  if (previewThumbsTimer !== null) {
+    window.clearTimeout(previewThumbsTimer)
+    previewThumbsTimer = null
   }
 
-  pageScopeKey = nextPageScopeKey
-
-  const sessionSources = [...previewSources, ...thumbSources]
-
-  await preloadSessionImages(sessionSources)
-
-  const [resolvedPreviews, resolvedThumbs] = await Promise.all([
-    Promise.all(previewSources.map((source) => getSessionCachedImage(source))),
-    Promise.all(thumbSources.map((source) => getSessionCachedImage(source))),
-  ])
-
-  if (thisExecutionId !== preloadExecutionId) {
-    return
+  if (previewThumbsIdleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(previewThumbsIdleHandle)
+    previewThumbsIdleHandle = null
   }
-
-  cachedPreviewSources.value = resolvedPreviews
-  cachedThumbSources.value = resolvedThumbs
-
-  const scheduleBackgroundLoad = () => {
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(
-        () => {
-          if (thisExecutionId === preloadExecutionId) {
-            loadModalImagesInBackground(modalSources, thisExecutionId)
-          }
-        },
-        { timeout: 2000 }
-      )
-      return
-    }
-
-    setTimeout(() => {
-      if (thisExecutionId === preloadExecutionId) {
-        loadModalImagesInBackground(modalSources, thisExecutionId)
-      }
-    }, 100)
-  }
-
-  scheduleBackgroundLoad()
 }
 
-async function loadModalImagesInBackground(modalSources, executionId) {
-  if (!modalSources.length) {
-    cachedModalSources.value = []
+function schedulePreviewThumbs() {
+  clearPreviewThumbsSchedule()
+
+  if (typeof window === 'undefined' || !hasMultiplePhotos.value) {
+    showPreviewThumbs.value = hasMultiplePhotos.value
     return
   }
 
-  await pageImageCache.preload(modalSources)
+  showPreviewThumbs.value = false
 
-  if (executionId !== preloadExecutionId) {
+  const revealThumbs = () => {
+    showPreviewThumbs.value = hasMultiplePhotos.value
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    previewThumbsIdleHandle = window.requestIdleCallback(revealThumbs, { timeout: 1200 })
     return
   }
 
-  const resolvedModals = await Promise.all(modalSources.map((source) => pageImageCache.get(source)))
-
-  if (executionId === preloadExecutionId) {
-    cachedModalSources.value = resolvedModals
-  }
+  previewThumbsTimer = window.setTimeout(revealThumbs, 350)
 }
 
 function openGallery(index) {
@@ -362,10 +278,6 @@ function openGallery(index) {
   currentPhotoIndex.value = normalized
   previewPhotoIndex.value = normalized
   galleryOpen.value = true
-
-  nextTick(() => {
-    resetZoom()
-  })
 }
 
 function closeGallery() {
@@ -377,10 +289,7 @@ function nextPhoto() {
     return
   }
 
-  if (isModalZoomed.value) {
-    resetZoom()
-  }
-
+  modalDirection.value = 'next'
   const nextIndex = normalizeIndex(currentPhotoIndex.value + 1)
   currentPhotoIndex.value = nextIndex
   previewPhotoIndex.value = nextIndex
@@ -391,10 +300,7 @@ function previousPhoto() {
     return
   }
 
-  if (isModalZoomed.value) {
-    resetZoom()
-  }
-
+  modalDirection.value = 'prev'
   const nextIndex = normalizeIndex(currentPhotoIndex.value - 1)
   currentPhotoIndex.value = nextIndex
   previewPhotoIndex.value = nextIndex
@@ -406,171 +312,9 @@ function setCurrentIndex(index) {
   }
 
   const normalized = normalizeIndex(index)
+  modalDirection.value = normalized < currentPhotoIndex.value ? 'prev' : 'next'
   currentPhotoIndex.value = normalized
   previewPhotoIndex.value = normalized
-  resetZoom()
-}
-
-function handleOverlayTouchMove(event) {
-  if (event.touches.length > 1) {
-    event.preventDefault()
-  }
-}
-
-function handleModalTouchStart(event) {
-  if (!galleryOpen.value) {
-    return
-  }
-
-  if (event.touches.length === 2) {
-    event.preventDefault()
-    isZooming.value = true
-    modalTouchStartX.value = null
-    modalTouchStartY.value = null
-
-    const touch1 = event.touches[0]
-    const touch2 = event.touches[1]
-
-    const dx = touch2.clientX - touch1.clientX
-    const dy = touch2.clientY - touch1.clientY
-    touchDistance.value = Math.sqrt(dx * dx + dy * dy)
-    lastTouchDistance.value = touchDistance.value
-
-    zoomOriginX.value = (touch1.clientX + touch2.clientX) / 2
-    zoomOriginY.value = (touch1.clientY + touch2.clientY) / 2
-    return
-  }
-
-  if (event.touches.length === 1 && !isModalZoomed.value) {
-    modalTouchStartX.value = event.touches[0].clientX
-    modalTouchStartY.value = event.touches[0].clientY
-  }
-}
-
-function handleModalTouchMove(event) {
-  if (event.touches.length === 2 && isZooming.value) {
-    event.preventDefault()
-
-    const touch1 = event.touches[0]
-    const touch2 = event.touches[1]
-
-    const dx = touch2.clientX - touch1.clientX
-    const dy = touch2.clientY - touch1.clientY
-    touchDistance.value = Math.sqrt(dx * dx + dy * dy)
-
-    const zoomDelta = touchDistance.value / (lastTouchDistance.value || touchDistance.value)
-    const nextZoom = Math.max(1, Math.min(4, currentZoom.value * zoomDelta))
-    zoomOriginX.value = (touch1.clientX + touch2.clientX) / 2
-    zoomOriginY.value = (touch1.clientY + touch2.clientY) / 2
-
-    if (nextZoom !== currentZoom.value) {
-      currentZoom.value = nextZoom
-      applyZoom()
-    }
-
-    lastTouchDistance.value = touchDistance.value
-    return
-  }
-
-  if (event.touches.length === 1 && !isModalZoomed.value && modalTouchStartX.value !== null) {
-    const moveX = event.touches[0].clientX
-    const moveY = event.touches[0].clientY
-    const deltaX = moveX - modalTouchStartX.value
-    const deltaY = moveY - modalTouchStartY.value
-
-    if (Math.abs(deltaX) > 12 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      event.preventDefault()
-    }
-  }
-}
-
-function handleModalTouchEnd(event) {
-  if (event.touches.length < 2) {
-    isZooming.value = false
-    touchDistance.value = 0
-    lastTouchDistance.value = 0
-  }
-
-  if (isModalZoomed.value) {
-    modalTouchStartX.value = null
-    modalTouchStartY.value = null
-    return
-  }
-
-  if (modalTouchStartX.value === null || !hasMultiplePhotos.value) {
-    modalTouchStartX.value = null
-    modalTouchStartY.value = null
-    return
-  }
-
-  const touchPoint = event.changedTouches?.[0]
-  if (!touchPoint) {
-    modalTouchStartX.value = null
-    modalTouchStartY.value = null
-    return
-  }
-
-  const deltaX = touchPoint.clientX - modalTouchStartX.value
-  const deltaY = touchPoint.clientY - (modalTouchStartY.value ?? touchPoint.clientY)
-  const swipeThreshold = 42
-
-  if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) >= swipeThreshold) {
-    if (deltaX > 0) {
-      previousPhoto()
-    } else {
-      nextPhoto()
-    }
-  }
-
-  modalTouchStartX.value = null
-  modalTouchStartY.value = null
-}
-
-function setModalImageRef(el, idx) {
-  if (!el) {
-    modalImageRefs.value[idx] = null
-    return
-  }
-
-  modalImageRefs.value[idx] = el
-}
-
-function applyZoom() {
-  const img = modalImageRefs.value[currentPhotoIndex.value]
-  if (!img || !modalContentRef.value) {
-    return
-  }
-
-  if (currentZoom.value <= 1) {
-    img.style.transform = 'translate3d(0, 0, 0) scale(1)'
-    return
-  }
-
-  const rect = img.getBoundingClientRect()
-  const containerRect = modalContentRef.value.getBoundingClientRect()
-
-  const originX = zoomOriginX.value - rect.left
-  const originY = zoomOriginY.value - rect.top
-
-  const translateX = ((containerRect.width / 2 - originX) * (currentZoom.value - 1)) / currentZoom.value
-  const translateY = ((containerRect.height / 2 - originY) * (currentZoom.value - 1)) / currentZoom.value
-
-  img.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${currentZoom.value})`
-}
-
-function resetZoom() {
-  currentZoom.value = 1
-  zoomOriginX.value = 0
-  zoomOriginY.value = 0
-  touchDistance.value = 0
-  lastTouchDistance.value = 0
-  isZooming.value = false
-
-  for (const img of modalImageRefs.value) {
-    if (img) {
-      img.style.transform = 'translate3d(0, 0, 0) scale(1)'
-    }
-  }
 }
 
 function setPreviewIndex(index) {
@@ -618,6 +362,44 @@ function handleTouchEnd(event) {
   touchStartX.value = null
 }
 
+function handleModalTouchStart(event) {
+  if (!hasMultiplePhotos.value) {
+    return
+  }
+
+  modalTouchStartX.value = event.changedTouches?.[0]?.clientX ?? null
+}
+
+function handleModalTouchEnd(event) {
+  if (!hasMultiplePhotos.value || modalTouchStartX.value === null) {
+    modalTouchStartX.value = null
+    return
+  }
+
+  const touchEndX = event.changedTouches?.[0]?.clientX
+  if (typeof touchEndX !== 'number') {
+    modalTouchStartX.value = null
+    return
+  }
+
+  const deltaX = touchEndX - modalTouchStartX.value
+  const swipeThreshold = 42
+
+  if (deltaX >= swipeThreshold) {
+    previousPhoto()
+  } else if (deltaX <= -swipeThreshold) {
+    nextPhoto()
+  }
+
+  modalTouchStartX.value = null
+}
+
+function handleOverlayTouchMove(event) {
+  if (event.touches.length > 1) {
+    event.preventDefault()
+  }
+}
+
 function handleWindowKeydown(event) {
   if (!galleryOpen.value) {
     return
@@ -643,8 +425,14 @@ function handleWindowKeydown(event) {
   }
 }
 
-function handleGesture(event) {
+function preventGestureZoom(event) {
   if (galleryOpen.value) {
+    event.preventDefault()
+  }
+}
+
+function preventPinchTouchZoom(event) {
+  if (galleryOpen.value && event.touches.length > 1) {
     event.preventDefault()
   }
 }
@@ -655,8 +443,9 @@ function addModalGlobalListeners() {
   }
 
   if (typeof document !== 'undefined') {
-    document.addEventListener('gesturestart', handleGesture, { passive: false })
-    document.addEventListener('gesturechange', handleGesture, { passive: false })
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false })
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false })
+    document.addEventListener('touchmove', preventPinchTouchZoom, { passive: false })
   }
 }
 
@@ -666,8 +455,9 @@ function removeModalGlobalListeners() {
   }
 
   if (typeof document !== 'undefined') {
-    document.removeEventListener('gesturestart', handleGesture)
-    document.removeEventListener('gesturechange', handleGesture)
+    document.removeEventListener('gesturestart', preventGestureZoom)
+    document.removeEventListener('gesturechange', preventGestureZoom)
+    document.removeEventListener('touchmove', preventPinchTouchZoom)
   }
 }
 
@@ -682,25 +472,16 @@ watch(galleryOpen, (isOpen) => {
   }
 
   removeModalGlobalListeners()
-  resetZoom()
-  modalImageRefs.value = []
 })
-
-watch(
-  () => props.photos,
-  () => {
-    preloadGalleryImages()
-  },
-  { deep: true, immediate: true }
-)
 
 watch(
   () => props.photos?.length || 0,
   (length) => {
+    schedulePreviewThumbs()
+
     if (!length) {
       previewPhotoIndex.value = 0
       currentPhotoIndex.value = 0
-      modalImageRefs.value = []
       return
     }
 
@@ -711,24 +492,17 @@ watch(
     if (currentPhotoIndex.value >= length) {
       currentPhotoIndex.value = previewPhotoIndex.value
     }
-
-    modalImageRefs.value = modalImageRefs.value.slice(0, length)
-  }
+  },
+  { immediate: true }
 )
-
-watch(currentPhotoIndex, () => {
-  nextTick(() => {
-    applyZoom()
-  })
-})
 
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') {
     document.body.style.overflow = ''
   }
 
+  clearPreviewThumbsSchedule()
   removeModalGlobalListeners()
-  resetZoom()
 })
 </script>
 
@@ -748,27 +522,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: box-shadow 0.2s ease;
   border: 1px solid rgba(77, 99, 57, 0.2);
-}
-
-.gallery-track-wrap {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.gallery-track {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  will-change: transform;
-  transition: transform var(--slide-duration, 240ms) cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.gallery-slide {
-  width: 100%;
-  height: 100%;
-  flex: 0 0 100%;
-  margin: 0;
 }
 
 .gallery-container:hover {
@@ -947,36 +700,12 @@ onBeforeUnmount(() => {
 
 .modal-content {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   padding: 0.5rem 1rem;
   min-height: 300px;
   overflow: hidden;
   position: relative;
-  touch-action: pan-y;
-}
-
-.modal-track {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  will-change: transform;
-  transition: transform var(--slide-duration, 240ms) cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.modal-track.is-zoomed {
-  transition: none !important;
-}
-
-.modal-slide {
-  flex: 0 0 100%;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .modal-image {
@@ -984,11 +713,11 @@ onBeforeUnmount(() => {
   max-height: 82vh;
   object-fit: contain;
   border-radius: var(--radius-md);
-  touch-action: none;
-  will-change: transform;
-  transition: transform 0.18s ease;
-  transform-origin: center center;
   user-select: none;
+}
+
+.modal-placeholder {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .modal-info {
@@ -1036,6 +765,49 @@ onBeforeUnmount(() => {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.modal-photo-next-enter-active,
+.modal-photo-next-leave-active,
+.modal-photo-prev-enter-active,
+.modal-photo-prev-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.modal-photo-next-enter-from {
+  opacity: 0;
+  transform: translateX(26px);
+}
+
+.modal-photo-next-leave-to {
+  opacity: 0;
+  transform: translateX(-26px);
+}
+
+.modal-photo-prev-enter-from {
+  opacity: 0;
+  transform: translateX(-26px);
+}
+
+.modal-photo-prev-leave-to {
+  opacity: 0;
+  transform: translateX(26px);
+}
+
+:global(body.low-motion) .modal-photo-next-enter-active,
+:global(body.low-motion) .modal-photo-next-leave-active,
+:global(body.low-motion) .modal-photo-prev-enter-active,
+:global(body.low-motion) .modal-photo-prev-leave-active {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-photo-next-enter-active,
+  .modal-photo-next-leave-active,
+  .modal-photo-prev-enter-active,
+  .modal-photo-prev-leave-active {
+    transition: none !important;
+  }
 }
 
 @media (max-width: 600px) {

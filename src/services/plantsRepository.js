@@ -67,6 +67,60 @@ function writePlantsCache(plants) {
   }
 }
 
+function readCachedPlantById(id) {
+  const needle = normalizeText(id).toLowerCase()
+  if (!needle) {
+    return null
+  }
+
+  const cachedPlants = readPlantsCache({ allowStale: true })
+  if (!cachedPlants.length) {
+    return null
+  }
+
+  return (
+    cachedPlants.find((plant) => {
+      const plantId = normalizeText(plant.id).toLowerCase()
+      const plantCode = normalizeText(plant.code).toLowerCase()
+      return plantId === needle || plantCode === needle
+    }) || null
+  )
+}
+
+function upsertPlantInCache(plant) {
+  if (!plant || !plant.id) {
+    return
+  }
+
+  const cachedPlants = readPlantsCache({ allowStale: true })
+  const index = cachedPlants.findIndex((item) => item.id === plant.id)
+
+  if (index >= 0) {
+    cachedPlants[index] = {
+      ...cachedPlants[index],
+      ...plant,
+    }
+  } else {
+    cachedPlants.push(plant)
+  }
+
+  writePlantsCache(cachedPlants)
+}
+
+async function fetchPlantByIdFromFirestore(id) {
+  const plantRef = doc(db, COLLECTION_NAME, id)
+  const snapshot = await getDoc(plantRef)
+
+  if (!snapshot.exists()) {
+    return null
+  }
+
+  return {
+    id: snapshot.id,
+    ...snapshot.data(),
+  }
+}
+
 function normalizeText(value) {
   if (!value) return ''
   return String(value).trim()
@@ -190,17 +244,27 @@ export async function getPlantById(id) {
     return mockPlants.find((plant) => plant.id === id) || null
   }
 
-  const plantRef = doc(db, COLLECTION_NAME, id)
-  const snapshot = await getDoc(plantRef)
+  const cachedPlant = readCachedPlantById(id)
+  if (cachedPlant) {
+    fetchPlantByIdFromFirestore(id)
+      .then((freshPlant) => {
+        if (freshPlant) {
+          upsertPlantInCache(freshPlant)
+        }
+      })
+      .catch(() => {
+        // Melhor esforço em background; falha silenciosa.
+      })
 
-  if (!snapshot.exists()) {
-    return null
+    return cachedPlant
   }
 
-  return {
-    id: snapshot.id,
-    ...snapshot.data(),
+  const plant = await fetchPlantByIdFromFirestore(id)
+  if (plant) {
+    upsertPlantInCache(plant)
   }
+
+  return plant
 }
 
 export async function upsertPlant(plantInput) {

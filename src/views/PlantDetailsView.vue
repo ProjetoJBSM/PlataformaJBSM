@@ -62,24 +62,28 @@
           </div>
         </div>
 
-        <LocationMap
-          :latitude="plant.geoLocation?.latitude"
-          :longitude="plant.geoLocation?.longitude"
-          :plant-name="plant.commonName || plant.scientificName"
-          style="margin-top: 1.5rem"
-        />
+        <div style="margin-top: 1.5rem">
+          <LocationMap
+            v-if="showMap"
+            :latitude="plant.geoLocation?.latitude"
+            :longitude="plant.geoLocation?.longitude"
+            :plant-name="plant.commonName || plant.scientificName"
+          />
+          <div v-else class="map-deferred-placeholder">Carregando mapa...</div>
+        </div>
       </article>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useConnectionProfile } from '../composables/useConnectionProfile'
 import { getPlantById } from '../services/plantsRepository'
 import PhotoGallery from '../components/PhotoGallery.vue'
-import LocationMap from '../components/LocationMap.vue'
+
+const LocationMap = defineAsyncComponent(() => import('../components/LocationMap.vue'))
 
 const route = useRoute()
 const { profileLabel, preferredImageVariant } = useConnectionProfile()
@@ -87,6 +91,9 @@ const { profileLabel, preferredImageVariant } = useConnectionProfile()
 const loading = ref(true)
 const error = ref('')
 const plant = ref(null)
+const showMap = ref(false)
+let mapIdleHandle = null
+let mapDelayTimer = null
 
 const modalImageVariant = computed(() => {
   return preferredImageVariant.value === 'high' ? 'high' : 'medium'
@@ -119,6 +126,7 @@ const galleryPhotos = computed(() => {
 async function loadPlant() {
   loading.value = true
   error.value = ''
+  showMap.value = false
 
   try {
     plant.value = await getPlantById(route.params.id)
@@ -126,7 +134,44 @@ async function loadPlant() {
     error.value = err instanceof Error ? err.message : 'Falha ao carregar espécie.'
   } finally {
     loading.value = false
+    scheduleMapMount()
   }
+}
+
+function clearMapSchedule() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (mapDelayTimer !== null) {
+    window.clearTimeout(mapDelayTimer)
+    mapDelayTimer = null
+  }
+
+  if (mapIdleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(mapIdleHandle)
+    mapIdleHandle = null
+  }
+}
+
+function scheduleMapMount() {
+  clearMapSchedule()
+
+  if (typeof window === 'undefined' || !plant.value) {
+    showMap.value = Boolean(plant.value)
+    return
+  }
+
+  const mountMap = () => {
+    showMap.value = true
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    mapIdleHandle = window.requestIdleCallback(mountMap, { timeout: 2200 })
+    return
+  }
+
+  mapDelayTimer = window.setTimeout(mountMap, 600)
 }
 
 onMounted(loadPlant)
@@ -137,6 +182,10 @@ watch(
     loadPlant()
   }
 )
+
+onBeforeUnmount(() => {
+  clearMapSchedule()
+})
 </script>
 
 <style scoped>
@@ -158,6 +207,17 @@ watch(
   min-width: 0;
 }
 
+.map-deferred-placeholder {
+  height: 260px;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(77, 99, 57, 0.28);
+  background: linear-gradient(180deg, #f2f5ed, #e8f0e0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
 @media (max-width: 960px) {
   .detail-grid {
     grid-template-columns: 1fr;
@@ -165,6 +225,10 @@ watch(
 
   .detail-left {
     width: 100%;
+  }
+
+  .map-deferred-placeholder {
+    height: 220px;
   }
 }
 </style>
