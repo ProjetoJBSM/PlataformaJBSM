@@ -6,17 +6,20 @@
       @touchstart.passive="handleTouchStart"
       @touchend.passive="handleTouchEnd"
     >
-      <img
-        v-if="mainPhotoPreview"
-        :src="mainPhotoPreview"
-        :alt="alt"
-        :fetchpriority="previewPhotoIndex === 0 ? 'high' : 'auto'"
-        loading="eager"
-        decoding="async"
-        class="gallery-main"
-        draggable="false"
-      />
-      <div v-else class="gallery-placeholder">Sem foto</div>
+      <Transition :name="previewTransitionName" mode="out-in">
+        <img
+          v-if="mainPhotoPreview"
+          :key="previewPhotoIndex"
+          :src="mainPhotoPreview"
+          :alt="alt"
+          :fetchpriority="previewPhotoIndex === 0 ? 'high' : 'auto'"
+          loading="eager"
+          decoding="async"
+          class="gallery-main"
+          draggable="false"
+        />
+        <div v-else key="preview-placeholder" class="gallery-placeholder">Sem foto</div>
+      </Transition>
 
       <button
         v-if="hasMultiplePhotos"
@@ -133,6 +136,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { getPageImageCache, getSessionCachedImage, preloadSessionImages } from '../services/imageCache'
 
 const props = defineProps({
   photos: {
@@ -152,15 +156,25 @@ const touchStartX = ref(null)
 const modalTouchStartX = ref(null)
 const ignoreNextOpen = ref(false)
 const modalDirection = ref('next')
+const previewDirection = ref('next')
 const showPreviewThumbs = ref(false)
+const cachedPreviewSources = ref([])
+const cachedThumbSources = ref([])
+const cachedModalSources = ref([])
 
 let previewThumbsTimer = null
 let previewThumbsIdleHandle = null
+let preloadExecutionId = 0
+
+const pageImageCache = getPageImageCache()
 
 const hasPhotos = computed(() => (props.photos?.length || 0) > 0)
 const hasMultiplePhotos = computed(() => (props.photos?.length || 0) > 1)
 const mainPhotoPreview = computed(() => getPreviewDisplay(previewPhotoIndex.value))
 const currentModalPhoto = computed(() => getModalDisplay(currentPhotoIndex.value))
+const previewTransitionName = computed(() =>
+  previewDirection.value === 'prev' ? 'modal-photo-prev' : 'modal-photo-next'
+)
 const modalTransitionName = computed(() =>
   modalDirection.value === 'prev' ? 'modal-photo-prev' : 'modal-photo-next'
 )
@@ -211,15 +225,90 @@ function getThumbSrc(photo) {
 }
 
 function getPreviewDisplay(index) {
-  return getPreviewSrc(props.photos?.[index])
+  return cachedPreviewSources.value[index] || getPreviewSrc(props.photos?.[index])
 }
 
 function getThumbDisplay(index) {
-  return getThumbSrc(props.photos?.[index])
+  return cachedThumbSources.value[index] || getThumbSrc(props.photos?.[index])
 }
 
 function getModalDisplay(index) {
-  return getModalSrc(props.photos?.[index])
+  return cachedModalSources.value[index] || getModalSrc(props.photos?.[index])
+}
+
+async function preloadGalleryImages() {
+  const photos = Array.isArray(props.photos) ? props.photos : []
+  const thisExecutionId = ++preloadExecutionId
+
+  if (!photos.length) {
+    cachedPreviewSources.value = []
+    cachedThumbSources.value = []
+    cachedModalSources.value = []
+    return
+  }
+
+  const previewSources = photos.map((photo) => getPreviewSrc(photo))
+  const thumbSources = photos.map((photo) => getThumbSrc(photo))
+  const modalSources = photos.map((photo) => getModalSrc(photo))
+
+  // Preload da navegação principal em qualidade baixa para troca imediata na galeria.
+  await preloadSessionImages([...previewSources, ...thumbSources])
+
+  const [resolvedPreviews, resolvedThumbs] = await Promise.all([
+    Promise.all(previewSources.map((source) => getSessionCachedImage(source))),
+    Promise.all(thumbSources.map((source) => getSessionCachedImage(source))),
+  ])
+
+  if (thisExecutionId !== preloadExecutionId) {
+    return
+  }
+
+  cachedPreviewSources.value = resolvedPreviews
+  cachedThumbSources.value = resolvedThumbs
+
+  const scheduleBackgroundModalLoad = () => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(
+        () => {
+          if (thisExecutionId === preloadExecutionId) {
+            void loadModalImagesInBackground(modalSources, thisExecutionId)
+          }
+        },
+        { timeout: 2200 }
+      )
+      return
+    }
+
+    setTimeout(() => {
+      if (thisExecutionId === preloadExecutionId) {
+        void loadModalImagesInBackground(modalSources, thisExecutionId)
+      }
+    }, 120)
+  }
+
+  scheduleBackgroundModalLoad()
+}
+
+async function loadModalImagesInBackground(modalSources, executionId) {
+  const uniqueSources = [...new Set(modalSources.filter(Boolean))]
+  if (!uniqueSources.length) {
+    if (executionId === preloadExecutionId) {
+      cachedModalSources.value = []
+    }
+    return
+  }
+
+  // Imagens do modal ampliado carregam em segundo plano com cache global da pagina.
+  await pageImageCache.preload(uniqueSources)
+
+  if (executionId !== preloadExecutionId) {
+    return
+  }
+
+  const resolvedModals = await Promise.all(modalSources.map((source) => pageImageCache.get(source)))
+  if (executionId === preloadExecutionId) {
+    cachedModalSources.value = resolvedModals
+  }
 }
 
 function clearPreviewThumbsSchedule() {
@@ -290,6 +379,7 @@ function nextPhoto() {
   }
 
   modalDirection.value = 'next'
+  previewDirection.value = 'next'
   const nextIndex = normalizeIndex(currentPhotoIndex.value + 1)
   currentPhotoIndex.value = nextIndex
   previewPhotoIndex.value = nextIndex
@@ -301,6 +391,7 @@ function previousPhoto() {
   }
 
   modalDirection.value = 'prev'
+  previewDirection.value = 'prev'
   const nextIndex = normalizeIndex(currentPhotoIndex.value - 1)
   currentPhotoIndex.value = nextIndex
   previewPhotoIndex.value = nextIndex
@@ -313,19 +404,24 @@ function setCurrentIndex(index) {
 
   const normalized = normalizeIndex(index)
   modalDirection.value = normalized < currentPhotoIndex.value ? 'prev' : 'next'
+  previewDirection.value = modalDirection.value
   currentPhotoIndex.value = normalized
   previewPhotoIndex.value = normalized
 }
 
 function setPreviewIndex(index) {
-  previewPhotoIndex.value = normalizeIndex(index)
+  const normalized = normalizeIndex(index)
+  previewDirection.value = normalized < previewPhotoIndex.value ? 'prev' : 'next'
+  previewPhotoIndex.value = normalized
 }
 
 function nextPreview() {
+  previewDirection.value = 'next'
   previewPhotoIndex.value = normalizeIndex(previewPhotoIndex.value + 1)
 }
 
 function previousPreview() {
+  previewDirection.value = 'prev'
   previewPhotoIndex.value = normalizeIndex(previewPhotoIndex.value - 1)
 }
 
@@ -475,6 +571,14 @@ watch(galleryOpen, (isOpen) => {
 })
 
 watch(
+  () => props.photos,
+  () => {
+    void preloadGalleryImages()
+  },
+  { deep: true, immediate: true }
+)
+
+watch(
   () => props.photos?.length || 0,
   (length) => {
     schedulePreviewThumbs()
@@ -482,6 +586,9 @@ watch(
     if (!length) {
       previewPhotoIndex.value = 0
       currentPhotoIndex.value = 0
+      cachedPreviewSources.value = []
+      cachedThumbSources.value = []
+      cachedModalSources.value = []
       return
     }
 
