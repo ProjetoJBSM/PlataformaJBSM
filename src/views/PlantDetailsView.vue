@@ -62,11 +62,11 @@
           </div>
         </div>
 
-        <div style="margin-top: 1.5rem">
+        <div v-if="hasMapCoordinates" style="margin-top: 1.5rem">
           <LocationMap
             v-if="showMap"
-            :latitude="plant.geoLocation?.latitude"
-            :longitude="plant.geoLocation?.longitude"
+            :latitude="mapLatitude"
+            :longitude="mapLongitude"
             :plant-name="plant.commonName || plant.scientificName"
           />
           <div v-else class="map-deferred-placeholder">Carregando mapa...</div>
@@ -94,6 +94,15 @@ const plant = ref(null)
 const showMap = ref(false)
 let mapIdleHandle = null
 let mapDelayTimer = null
+
+function parseCoordinate(value) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const mapLatitude = computed(() => parseCoordinate(plant.value?.geoLocation?.latitude))
+const mapLongitude = computed(() => parseCoordinate(plant.value?.geoLocation?.longitude))
+const hasMapCoordinates = computed(() => mapLatitude.value !== null && mapLongitude.value !== null)
 
 const modalImageVariant = computed(() => {
   return preferredImageVariant.value === 'high' ? 'high' : 'medium'
@@ -157,8 +166,8 @@ function clearMapSchedule() {
 function scheduleMapMount() {
   clearMapSchedule()
 
-  if (typeof window === 'undefined' || !plant.value) {
-    showMap.value = Boolean(plant.value)
+  if (typeof window === 'undefined' || !hasMapCoordinates.value) {
+    showMap.value = false
     return
   }
 

@@ -310,6 +310,7 @@ const formSnapshotVersion = ref(0)
 const photoSnapshot = ref('[]')
 const baselineSnapshot = ref('')
 const suppressSnapshotTracking = ref(false)
+const COORDINATE_DECIMALS = 6
 
 const form = reactive(createEmptyForm())
 
@@ -416,7 +417,11 @@ function parseCoordinate(value) {
   }
 
   const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : null
+  if (!Number.isFinite(numeric)) {
+    return null
+  }
+
+  return Number(numeric.toFixed(COORDINATE_DECIMALS))
 }
 
 function isFiniteNumber(value) {
@@ -593,9 +598,12 @@ async function buildImagesFromUpload() {
 }
 
 function handleGeoLocationDetected(event) {
-  if (isFiniteNumber(event.latitude) && isFiniteNumber(event.longitude)) {
-    form.geoLocation.latitude = event.latitude
-    form.geoLocation.longitude = event.longitude
+  const latitude = parseCoordinate(event.latitude)
+  const longitude = parseCoordinate(event.longitude)
+
+  if (latitude !== null && longitude !== null) {
+    form.geoLocation.latitude = latitude
+    form.geoLocation.longitude = longitude
     setStatus('Geolocalização importada da foto!')
   }
 }
@@ -613,8 +621,8 @@ function patchForm(data) {
   form.description = data.description || ''
   form.location = data.location || ''
   form.curatorNotes = data.curatorNotes || ''
-  form.geoLocation.latitude = data.geoLocation?.latitude ?? null
-  form.geoLocation.longitude = data.geoLocation?.longitude ?? null
+  form.geoLocation.latitude = parseCoordinate(data.geoLocation?.latitude)
+  form.geoLocation.longitude = parseCoordinate(data.geoLocation?.longitude)
 
   photoUploadRef.value?.setExistingPhotos?.(Array.isArray(data.images) ? data.images : [])
   photoSnapshot.value = JSON.stringify(photoUploadRef.value?.getSnapshot?.() || [])

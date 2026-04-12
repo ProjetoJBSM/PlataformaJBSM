@@ -837,7 +837,7 @@ onBeforeUnmount(() => {
 .modal-thumbnails {
   display: flex;
   gap: 0.5rem;
-  padding: 1rem;
+  padding: 0.5rem;
   overflow-x: auto;
   justify-content: center;
 }

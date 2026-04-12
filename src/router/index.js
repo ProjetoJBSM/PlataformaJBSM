@@ -1,9 +1,6 @@
 import { createRouter as createVueRouter, createWebHistory } from 'vue-router'
-import { getIdTokenResult, onAuthStateChanged } from 'firebase/auth'
+import HomeView from '../views/HomeView.vue'
 
-import { auth, hasFirebaseConfig } from '../services/firebase'
-
-const HomeView = () => import('../views/HomeView.vue')
 const CollectionView = () => import('../views/CollectionView.vue')
 const PlantDetailsView = () => import('../views/PlantDetailsView.vue')
 const AdminLoginView = () => import('../views/AdminLoginView.vue')
@@ -45,15 +42,51 @@ const routes = [
 ]
 
 let authInitPromise
+let authApiPromise
 
-function waitForAuthReady() {
-  if (!hasFirebaseConfig || !auth) {
+async function loadAuthApi() {
+  if (!authApiPromise) {
+    authApiPromise = (async () => {
+      try {
+        const { auth, hasFirebaseConfig } = await import('../services/firebase')
+        if (!hasFirebaseConfig || !auth) {
+          return {
+            configured: false,
+            auth: null,
+            getIdTokenResult: null,
+            onAuthStateChanged: null,
+          }
+        }
+
+        const { getIdTokenResult, onAuthStateChanged } = await import('firebase/auth')
+        return {
+          configured: true,
+          auth,
+          getIdTokenResult,
+          onAuthStateChanged,
+        }
+      } catch {
+        return {
+          configured: false,
+          auth: null,
+          getIdTokenResult: null,
+          onAuthStateChanged: null,
+        }
+      }
+    })()
+  }
+
+  return authApiPromise
+}
+
+function waitForAuthReady(authApi) {
+  if (!authApi.configured || !authApi.auth || !authApi.onAuthStateChanged) {
     return Promise.resolve(null)
   }
 
   if (!authInitPromise) {
     authInitPromise = new Promise((resolve) => {
-      const unsubscribe = onAuthStateChanged(auth, () => {
+      const unsubscribe = authApi.onAuthStateChanged(authApi.auth, () => {
         unsubscribe()
         resolve()
       })
@@ -64,7 +97,9 @@ function waitForAuthReady() {
 }
 
 async function getAuthAccessState() {
-  if (!hasFirebaseConfig || !auth) {
+  const authApi = await loadAuthApi()
+
+  if (!authApi.configured || !authApi.auth || !authApi.getIdTokenResult) {
     return {
       configured: false,
       user: null,
@@ -72,8 +107,8 @@ async function getAuthAccessState() {
     }
   }
 
-  await waitForAuthReady()
-  const user = auth.currentUser
+  await waitForAuthReady(authApi)
+  const user = authApi.auth.currentUser
   if (!user) {
     return {
       configured: true,
@@ -83,7 +118,7 @@ async function getAuthAccessState() {
   }
 
   try {
-    const tokenResult = await getIdTokenResult(user, true)
+    const tokenResult = await authApi.getIdTokenResult(user, true)
     return {
       configured: true,
       user,
@@ -119,6 +154,11 @@ export function createRouter() {
   })
 
   router.beforeEach(async (to) => {
+    const needsAuthCheck = to.meta.requiresAdmin || to.name === 'admin-login'
+    if (!needsAuthCheck) {
+      return true
+    }
+
     const authState = await getAuthAccessState()
 
     if (to.meta.requiresAdmin) {

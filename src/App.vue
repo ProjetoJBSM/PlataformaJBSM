@@ -84,8 +84,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { signOut } from 'firebase/auth'
-import { auth } from './services/firebase'
 import { useConnectionProfile } from './composables/useConnectionProfile'
 
 const route = useRoute()
@@ -108,7 +106,15 @@ const lowMotionMode = computed(() => {
 
 async function handleLogout() {
   try {
-    await signOut(auth)
+    const [{ signOut }, { auth }] = await Promise.all([
+      import('firebase/auth'),
+      import('./services/firebase'),
+    ])
+
+    if (auth) {
+      await signOut(auth)
+    }
+
     await router.push({ name: 'home' })
   } catch (error) {
     console.error('Erro ao fazer logout:', error)

@@ -1,5 +1,6 @@
 const sessionImageCache = new Map()
 const pageImageCacheGlobal = new Map()
+const reportedImageFetchFailures = new Set()
 
 let sessionCleanupRegistered = false
 let pageCleanupRegistered = false
@@ -29,22 +30,77 @@ function registerSessionCleanup() {
 }
 
 async function fetchImageAsObjectUrl(url) {
+  const normalizedSource = normalizeSource(url)
+  if (!normalizedSource) {
+    return ''
+  }
+
+  if (isCrossOriginSource(normalizedSource)) {
+    await warmBrowserImageCache(normalizedSource)
+    return normalizedSource
+  }
+
   try {
-    const response = await fetch(url, { 
+    const response = await fetch(normalizedSource, {
       cache: 'force-cache',
       credentials: 'omit',
     })
     if (!response.ok) {
-      console.warn(`Falha ao baixar imagem (status ${response.status}): ${url}`)
+      logImageFetchFailureOnce(normalizedSource, `status ${response.status}`)
       throw new Error(`Falha ao baixar imagem: ${response.status}`)
     }
 
     const imageBlob = await response.blob()
     return URL.createObjectURL(imageBlob)
   } catch (error) {
-    console.error('Erro ao fazer fetch da imagem:', error)
+    logImageFetchFailureOnce(normalizedSource, error)
     throw error
   }
+}
+
+function isCrossOriginSource(source) {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    const parsed = new URL(source, window.location.href)
+    return parsed.origin !== window.location.origin
+  } catch {
+    return false
+  }
+}
+
+function warmBrowserImageCache(source) {
+  return new Promise((resolve) => {
+    if (typeof Image === 'undefined') {
+      resolve(source)
+      return
+    }
+
+    const image = new Image()
+    image.decoding = 'async'
+
+    const complete = () => {
+      image.onload = null
+      image.onerror = null
+      resolve(source)
+    }
+
+    image.onload = complete
+    image.onerror = complete
+    image.src = source
+  })
+}
+
+function logImageFetchFailureOnce(source, detail) {
+  const key = `${source}`
+  if (reportedImageFetchFailures.has(key)) {
+    return
+  }
+
+  reportedImageFetchFailures.add(key)
+  console.warn('Falha no cache de imagem, usando URL original:', source, detail)
 }
 
 function normalizeSource(source) {
