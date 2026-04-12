@@ -6,8 +6,8 @@
           <img src="./assets/img/logo1.png" alt="Logo JBSM" class="brand-logo" />
           <div class="brand-text">
             <div class="brand-name">
-              <span class="brand-botanical">Jardim Botânico <span class="brand-institution">UFSM</span></span>
-              <span v-if="isAdminArea" class="brand-admin-label">Administração</span>
+              <span v-if="isAdminArea" class="brand-botanical">Administração</span>
+              <span v-else="isAdminArea" class="brand-botanical">Jardim Botânico <span class="brand-institution">UFSM</span></span>
             </div>
           </div>
         </RouterLink>
@@ -24,8 +24,9 @@
 
         <nav class="main-nav" :class="{ open: mobileMenuOpen }">
           <RouterLink :to="{ name: 'home', hash: '#sobre' }">Sobre</RouterLink>
-          <RouterLink :to="{ name: 'home', hash: '#atrações' }">Atrações</RouterLink>
-          <RouterLink :to="{ name: 'home', hash: '#visita' }">Visite</RouterLink>
+          <RouterLink :to="{ name: 'home', hash: '#atracoes' }">Atrações</RouterLink>
+          <RouterLink :to="{ name: 'home', hash: '#visite' }">Visite</RouterLink>
+          <RouterLink :to="{ name: 'home', hash: '#contato' }">Contato</RouterLink>
           <RouterLink :to="{ name: 'collection' }">Acervo</RouterLink>
 
           <span v-if="isAdminArea" class="main-nav-divider" aria-hidden="true"></span>

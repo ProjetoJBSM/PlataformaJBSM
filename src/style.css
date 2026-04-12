@@ -87,6 +87,22 @@ a {
   margin: 0 auto;
 }
 
+.containeradm {
+  width: calc(100% - 1rem);
+  flex: 1;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  align-items: stretch;
+  padding: 0rem 1rem;
+}
+
+.containeradm > .admin-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -224,7 +240,9 @@ a {
 
 .site-main {
   flex: 1;
-  padding: 0rem 0 3rem;
+  min-height: 0;
+  display: flex;
+  padding: 0rem 0rem 2rem;
 }
 
 .site-footer {
@@ -529,7 +547,6 @@ a {
 }
 
 .species-list {
-  max-height: 520px;
   overflow: auto;
   display: grid;
   gap: 0.45rem;

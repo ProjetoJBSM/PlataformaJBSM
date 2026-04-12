@@ -143,17 +143,55 @@
             <a class="btn btn-primary" href="https://forms.gle/9GoPeqG27csYxWJ86" target="_blank" rel="noreferrer">
               Agendar visita
             </a>
-            <a
-              class="btn btn-secondary"
-              href="https://www.ufsm.br/orgaos-suplementares/jardim-botanico"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Site institucional
-            </a>
           </div>
-          <p style="margin-top: 0.8rem; color: var(--muted)">
-            Endereço: Av. Roraima, 1000 - Camobi, Santa Maria/RS.
+          <p class="address-line">
+            <span>Endereço: Av. Roraima, 1000 - Camobi, Santa Maria/RS.</span>
+            <a
+              class="maps-link"
+              href="https://maps.google.com/?q=-29.716799,-53.729598"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Abrir no Google Maps
+            </a>
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="contato">
+        <header class="section-header">
+          <h2 class="section-title">Contato</h2>
+        </header>
+        <div class="panel">
+          <p> Administração: +55 55 3220-8973 </p>
+          <p> Visitações: +55 55 99193-8183 </p>
+          <p> Email: jardimbotanico@ufsm.br</p>
+          <p> Siga-nos nas redes sociais:</p> 
+          <div class="form-actions social-links">
+            <a href="https://www.facebook.com/JardimBotanicoDeSantaMaria" class="social-button" target="_blank" rel="noopener noreferrer" aria-label="Facebook do Jardim Botânico">
+            <img :src="facebookIcon" alt="Facebook">
+            </a>
+            <a href="https://www.instagram.com/jardimbotanicodaufsm" class="social-button" target="_blank" rel="noopener noreferrer" aria-label="Instagram do Jardim Botânico">
+            <img :src="instagramIcon" alt="Instagram">
+            </a>
+            <a href="https://www.youtube.com/@JardimBotanicodaUFSM" class="social-button" target="_blank" rel="noopener noreferrer" aria-label="Canal no YouTube do Jardim Botânico">
+            <img :src="youtubeIcon" alt="YouTube">
+            </a>
+            <a href="https://www.ufsm.br/orgaos-suplementares/jardim-botanico" class="social-button" target="_blank" rel="noopener noreferrer" aria-label="Site institucional do Jardim Botânico">
+            <img :src="websiteIcon" alt="Site Institucional">
+            </a>
+        </div>
+          
+          <p class="address-line">
+            <span>Endereço: Av. Roraima, 1000 - Camobi, Santa Maria/RS.</span>
+            <a
+              class="maps-link"
+              href="https://maps.google.com/?q=-29.716799,-53.729598"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Abrir no Google Maps
+            </a>
           </p>
         </div>
       </section>
@@ -163,6 +201,10 @@
 
 <script setup>
 import { RouterLink } from 'vue-router'
+import facebookIcon from '../assets/icons/facebook.svg'
+import instagramIcon from '../assets/icons/instagram.svg'
+import youtubeIcon from '../assets/icons/youtube.svg'
+import websiteIcon from '../assets/icons/website.svg'
 </script>
 
 <style scoped>
@@ -218,6 +260,60 @@ import { RouterLink } from 'vue-router'
 
 .attraction-card p {
   color: var(--muted);
+}
+
+.social-links {
+  align-items: center;
+}
+
+.social-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(17, 74, 30, 0.42);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  color: white;
+  background: linear-gradient(135deg, #5e7944, #406333);
+  box-shadow: 0 8px 20px rgba(52, 80, 51, 0.28);
+}
+
+.social-button:hover {
+  transform: translateY(-1px);
+  
+}
+
+.social-button:focus-visible {
+  outline: 2px solid rgba(46, 143, 53, 0.48);
+  outline-offset: 2px;
+}
+
+.social-button img {
+  width: 22px;
+  height: 22px;
+  filter: brightness(0) invert(1);
+}
+
+.address-line {
+  margin-top: 0.8rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.maps-link {
+  color: var(--green-800);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.1rem;
+}
+
+.maps-link:hover {
+  color: var(--green-900);
 }
 
 @media (max-width: 960px) {

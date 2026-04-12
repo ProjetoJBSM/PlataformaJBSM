@@ -44,6 +44,33 @@ const routes = [
 let authInitPromise
 let authApiPromise
 
+function waitForHashTarget(hash, timeoutMs = 1200) {
+  const targetId = hash.startsWith('#') ? hash.slice(1) : hash
+  if (!targetId) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+
+    const check = () => {
+      if (document.getElementById(targetId)) {
+        resolve(true)
+        return
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(false)
+        return
+      }
+
+      window.requestAnimationFrame(check)
+    }
+
+    check()
+  })
+}
+
 async function loadAuthApi() {
   if (!authApiPromise) {
     authApiPromise = (async () => {
@@ -137,14 +164,21 @@ export function createRouter() {
   const router = createVueRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes,
-    scrollBehavior(to, _from, savedPosition) {
+    async scrollBehavior(to, _from, savedPosition) {
       if (savedPosition) {
         return savedPosition
       }
 
       if (to.hash) {
+        const targetHash = decodeURIComponent(to.hash)
+        const hashTargetFound = await waitForHashTarget(targetHash)
+        if (!hashTargetFound) {
+          return { top: 0 }
+        }
+
         return {
-          el: to.hash,
+          el: targetHash,
+          top: 100,
           behavior: 'smooth',
         }
       }
