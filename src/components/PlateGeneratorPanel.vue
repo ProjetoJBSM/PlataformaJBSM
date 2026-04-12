@@ -670,12 +670,37 @@ const allSpeciesSelected = computed(() => {
 })
 
 const selectedCodesSummary = computed(() => {
-  if (!selectedSpecies.value.length) {
+  const currentSelection = selectedSpecies.value
+  if (!currentSelection.length) {
     return 'Selecione especies...'
   }
 
-  return selectedSpecies.value.map((plant) => getSpeciesCode(plant)).join(', ')
+  const visibleLimit = 8
+  const visibleCodes = currentSelection
+    .slice(0, visibleLimit)
+    .map((plant) => getSpeciesCode(plant))
+  const remaining = currentSelection.length - visibleLimit
+
+  if (remaining > 0) {
+    return `${visibleCodes.join(', ')} +${remaining}`
+  }
+
+  return visibleCodes.join(', ')
 })
+
+function areArraysEqual(left, right) {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false
+    }
+  }
+
+  return true
+}
 
 function setStatus(message, isError = false) {
   statusMessage.value = message
@@ -724,13 +749,11 @@ function toggleSpeciesSelection(plantId, checked) {
   selectedSpeciesIds.value = [...current]
 }
 
-function toggleSelectAllSpecies() {
-  if (allSpeciesSelected.value) {
-    selectedSpeciesIds.value = []
-    return
-  }
-
-  selectedSpeciesIds.value = sortedPlantsByCode.value.map((plant) => plant.id)
+function toggleSelectAllSpecies(event) {
+  const shouldSelectAll = Boolean(event?.target?.checked)
+  selectedSpeciesIds.value = shouldSelectAll
+    ? sortedPlantsByCode.value.map((plant) => plant.id)
+    : []
 }
 
 function updateSelectAllIndeterminate() {
@@ -1815,7 +1838,7 @@ watch(
     qrSettings.x = Math.min(Math.max(0, Number(qrSettings.x) || 0), maxX)
     qrSettings.y = Math.min(Math.max(0, Number(qrSettings.y) || 0), maxY)
   },
-  { deep: true }
+  { deep: false }
 )
 
 watch(
@@ -1824,14 +1847,18 @@ watch(
     updateSelectAllIndeterminate()
 
     const availableIds = new Set(sortedPlantsByCode.value.map((plant) => plant.id))
-    selectedSpeciesIds.value = selectedSpeciesIds.value.filter((id) => availableIds.has(id))
+    const sanitizedSelection = selectedSpeciesIds.value.filter((id) => availableIds.has(id))
+    if (!areArraysEqual(sanitizedSelection, selectedSpeciesIds.value)) {
+      selectedSpeciesIds.value = sanitizedSelection
+      return
+    }
 
     if (!hasSelectedSpecies.value) {
       plateSubTab.value = 'models'
       clearPreviewUrl()
     }
   },
-  { deep: true }
+  { deep: false }
 )
 
 watch(
