@@ -103,18 +103,27 @@
         </div>
 
         <div class="models-list" :class="{ loading: loadingModels }">
-          <button
-            v-for="item in availableModels"
-            :key="item.id"
-            class="model-item"
-            :class="{ active: selectedModelId === item.id }"
-            type="button"
-            @click="selectStoredModel(item)"
-            :disabled="!hasSelectedSpecies"
-          >
-            <strong>{{ item.name }}</strong>
-            <span>{{ formatDate(item.updatedAt) }}</span>
-          </button>
+          <div v-for="item in availableModels" :key="item.id" class="model-item-row">
+            <button
+              class="model-item"
+              :class="{ active: selectedModelId === item.id }"
+              type="button"
+              @click="selectStoredModel(item)"
+              :disabled="!hasSelectedSpecies"
+            >
+              <strong>{{ item.name }}</strong>
+              <span>{{ formatDate(item.updatedAt) }}</span>
+            </button>
+
+            <button
+              class="btn btn-danger model-delete-btn"
+              type="button"
+              @click.stop="removeStoredModel(item)"
+              :disabled="loadingModels || isWorking"
+            >
+              Excluir
+            </button>
+          </div>
 
           <div v-if="!availableModels.length && !loadingModels" class="empty-state">
             Nenhum modelo salvo ainda.
@@ -230,6 +239,38 @@
 
           <section v-show="customizeTab === 'qrcode'" class="customize-pane">
             <div class="qr-rows">
+              <div class="qr-row qr-source-row" :class="{ 'with-text': qrSettings.contentMode === 'text' }">
+                <label class="qr-source-mode">
+                  <span class="field-label">Conteudo do QR</span>
+                  <select v-model="qrSettings.contentMode" class="select">
+                    <option value="url">URL da especie</option>
+                    <option value="field">Campo da planta</option>
+                    <option value="text">Texto personalizado</option>
+                  </select>
+                </label>
+
+                <label v-if="qrSettings.contentMode === 'text'" class="qr-source-text">
+                  <span class="field-label">Texto do QR</span>
+                  <input
+                    v-model="qrSettings.customText"
+                    class="input"
+                    type="text"
+                    placeholder="Digite o texto para codificar"
+                  />
+                </label>
+              </div>
+
+              <div v-if="qrSettings.contentMode === 'field'" class="qr-row">
+                <label>
+                  <span class="field-label">Campo da planta</span>
+                  <select v-model="qrSettings.fieldSource" class="select">
+                    <option v-for="option in qrPayloadFieldOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
               <div class="qr-row two-columns">
                 <label class="slider-control">
                   <span class="field-label">Tamanho do QR (pt)</span>
@@ -287,13 +328,13 @@
                 </label>
                 <label class="checkbox-line compact">
                   <input v-model="qrSettings.showText" type="checkbox" />
-                  Mostrar URL
+                  Mostrar conteudo
                 </label>
               </div>
 
               <div v-if="qrSettings.showText" class="qr-row two-columns">
                 <label>
-                  <span class="field-label">Fonte da URL (pt)</span>
+                  <span class="field-label">Fonte do texto (pt)</span>
                   <input v-model.number="qrSettings.fontSize" class="input" type="number" min="8" max="24" />
                 </label>
 
@@ -542,7 +583,7 @@ import fontkit from '@pdf-lib/fontkit'
 import JSZip from 'jszip'
 import QRCode from 'qrcode'
 
-import { listPlateModels, savePlateModel } from '../services/plateModels'
+import { deletePlateModel, listPlateModels, savePlateModel } from '../services/plateModels'
 
 const props = defineProps({
   plants: {
@@ -593,6 +634,9 @@ const templateState = reactive({
 })
 
 const qrSettings = reactive({
+  contentMode: 'url',
+  fieldSource: 'code',
+  customText: '',
   size: 180,
   x: 48,
   y: 68,
@@ -625,6 +669,8 @@ const speciesFieldOptions = [
   { value: 'description', label: 'Descricao' },
   { value: 'url', label: 'URL da especie' },
 ]
+
+const qrPayloadFieldOptions = speciesFieldOptions.filter((option) => option.value !== 'url')
 
 const selectedSpeciesIdSet = computed(() => new Set(selectedSpeciesIds.value))
 
@@ -1004,6 +1050,9 @@ function resetDesignerState() {
   backgroundColor.value = '#f8fbf6'
   textRightMargin.value = 40
 
+  qrSettings.contentMode = 'url'
+  qrSettings.fieldSource = 'code'
+  qrSettings.customText = ''
   qrSettings.size = 180
   qrSettings.x = 48
   qrSettings.y = 68
@@ -1026,6 +1075,29 @@ function openModelFilePicker() {
   modelFileInputRef.value?.click()
 }
 
+function getUniqueModelName(baseName) {
+  const normalized = String(baseName || '').trim() || 'modelo-sem-nome'
+  const existingNames = new Set(
+    availableModels.value
+      .map((item) => String(item?.name || '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+
+  if (!existingNames.has(normalized.toLowerCase())) {
+    return normalized
+  }
+
+  let suffix = 1
+  let candidate = `${normalized}_${suffix}`
+
+  while (existingNames.has(candidate.toLowerCase())) {
+    suffix += 1
+    candidate = `${normalized}_${suffix}`
+  }
+
+  return candidate
+}
+
 async function handleModelFileUpload(event) {
   const file = event.target.files?.[0]
   if (!file) {
@@ -1035,16 +1107,25 @@ async function handleModelFileUpload(event) {
   try {
     const parsed = JSON.parse(await file.text())
     const importedName = parsed?.name || file.name.replace(/\.json$/i, '')
-    modelName.value = importedName
+    const uniqueName = getUniqueModelName(importedName)
+    modelName.value = uniqueName
 
     await applyModelPayload(parsed)
-    const saved = await savePlateModel(importedName, buildModelPayload())
+    const saved = await savePlateModel(uniqueName, buildModelPayload())
     await refreshStoredModels()
 
     if (saved?.storagePath) {
-      setStatus(`Modelo ${importedName} carregado e salvo na plataforma.`)
+      if (uniqueName !== importedName) {
+        setStatus(`Modelo carregado e salvo como ${uniqueName} (nome ja existente).`)
+      } else {
+        setStatus(`Modelo ${uniqueName} carregado e salvo na plataforma.`)
+      }
     } else {
-      setStatus(`Modelo ${importedName} carregado e salvo localmente (sem permissao no Storage).`)
+      if (uniqueName !== importedName) {
+        setStatus(`Modelo carregado e salvo localmente como ${uniqueName} (nome ja existente).`)
+      } else {
+        setStatus(`Modelo ${uniqueName} carregado e salvo localmente (sem permissao no Storage).`)
+      }
     }
   } catch (error) {
     setStatus(`Falha ao carregar modelo: ${error instanceof Error ? error.message : 'erro desconhecido'}`, true)
@@ -1067,18 +1148,29 @@ async function saveCurrentModelToPlatform() {
     return
   }
 
+  const uniqueName = getUniqueModelName(normalizedName)
+
   try {
     setWorking('Salvando modelo na plataforma...')
     clearStatus()
+    modelName.value = uniqueName
 
-    const saved = await savePlateModel(normalizedName, buildModelPayload())
+    const saved = await savePlateModel(uniqueName, buildModelPayload())
     await refreshStoredModels()
 
     selectedModelId.value = saved.id
     if (saved?.storagePath) {
-      setStatus(`Modelo ${normalizedName} salvo na plataforma com sucesso.`)
+      if (uniqueName !== normalizedName) {
+        setStatus(`Nome ja existente. Modelo salvo como ${uniqueName}.`)
+      } else {
+        setStatus(`Modelo ${uniqueName} salvo na plataforma com sucesso.`)
+      }
     } else {
-      setStatus(`Modelo ${normalizedName} salvo localmente (sem permissao no Storage).`)
+      if (uniqueName !== normalizedName) {
+        setStatus(`Nome ja existente. Modelo salvo localmente como ${uniqueName}.`)
+      } else {
+        setStatus(`Modelo ${uniqueName} salvo localmente (sem permissao no Storage).`)
+      }
     }
   } catch (error) {
     setStatus(`Falha ao salvar modelo: ${error instanceof Error ? error.message : 'erro desconhecido'}`, true)
@@ -1114,6 +1206,35 @@ async function selectStoredModel(item) {
   }
 }
 
+async function removeStoredModel(item) {
+  if (!item) {
+    return
+  }
+
+  const confirmed = window.confirm(`Excluir o modelo ${item.name}?`)
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    setWorking('Excluindo modelo...')
+    clearStatus()
+
+    await deletePlateModel(item)
+    await refreshStoredModels()
+
+    if (selectedModelId.value === item.id) {
+      selectedModelId.value = ''
+    }
+
+    setStatus(`Modelo ${item.name} excluido com sucesso.`)
+  } catch (error) {
+    setStatus(`Falha ao excluir modelo: ${error instanceof Error ? error.message : 'erro desconhecido'}`, true)
+  } finally {
+    clearWorking()
+  }
+}
+
 function buildModelPayload() {
   const nowIso = new Date().toISOString()
 
@@ -1136,6 +1257,9 @@ function buildModelPayload() {
       templateBytes: arrayToBase64(templateState.bytes),
     },
     qrSettings: {
+      contentMode: qrSettings.contentMode,
+      fieldSource: qrSettings.fieldSource,
+      customText: qrSettings.customText,
       qrSize: qrSettings.size,
       posX: qrSettings.x,
       posY: qrSettings.y,
@@ -1192,6 +1316,9 @@ async function applyModelPayload(model) {
     qr.background !== undefined ? qr.background : qr.qrBackground !== undefined ? qr.qrBackground : true
   const importedShowText =
     qr.showText !== undefined ? qr.showText : qr.renderText === 'yes'
+  const importedContentMode = qr.contentMode || qr.sourceMode || qr.qrContentMode || 'url'
+  const importedFieldSource = qr.fieldSource || qr.sourceField || qr.qrFieldSource || 'code'
+  const importedCustomText = qr.customText || qr.sourceText || qr.qrCustomText || ''
 
   pageSize.value = page.pageSize || 'A4'
   customW.value = Number(page.customWidth) || 595
@@ -1200,6 +1327,9 @@ async function applyModelPayload(model) {
   backgroundColor.value = page.backgroundColor || '#f8fbf6'
   textRightMargin.value = Number(page.textRightMargin ?? qr.textRightMargin) || 40
 
+  qrSettings.contentMode = ['url', 'field', 'text'].includes(importedContentMode) ? importedContentMode : 'url'
+  qrSettings.fieldSource = String(importedFieldSource || 'code')
+  qrSettings.customText = String(importedCustomText || '')
   qrSettings.size = Number(importedQrSize) || 180
   qrSettings.x = Number(importedQrX) || 48
   qrSettings.y = Number(importedQrY) || 68
@@ -1475,7 +1605,7 @@ async function drawPlateOverlay(pdfDoc, page, plant) {
 }
 
 async function drawQrOnPage(pdfDoc, page, plant) {
-  const qrText = getSpeciesUrl(plant.id)
+  const qrText = getQrPayloadText(plant)
   const qrSize = Math.max(50, Number(qrSettings.size) || 180)
   const qrX = Math.max(0, Number(qrSettings.x) || 0)
   const qrY = Math.max(0, Number(qrSettings.y) || 0)
@@ -1511,6 +1641,22 @@ async function drawQrOnPage(pdfDoc, page, plant) {
       color: rgb(0.14, 0.14, 0.14),
     })
   }
+}
+
+function getQrPayloadText(plant) {
+  if (qrSettings.contentMode === 'text') {
+    const customText = String(qrSettings.customText || '').trim()
+    return customText || getSpeciesUrl(plant?.id)
+  }
+
+  if (qrSettings.contentMode === 'field') {
+    const fieldKey = String(qrSettings.fieldSource || '').trim()
+    const plantMap = getPlantDataMap(plant)
+    const fieldValue = plantMap[fieldKey]
+    return String(fieldValue || '').trim() || getSpeciesUrl(plant?.id)
+  }
+
+  return getSpeciesUrl(plant?.id)
 }
 
 async function drawImageFieldsOnPage(pdfDoc, page) {
@@ -2041,6 +2187,13 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 
+.model-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
 .model-item {
   border: 1px solid rgba(77, 99, 57, 0.2);
   border-radius: 10px;
@@ -2059,6 +2212,10 @@ onBeforeUnmount(() => {
 .model-item span {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.model-delete-btn {
+  padding: 0.5rem 0.75rem;
 }
 
 .customize-panel {
@@ -2133,6 +2290,20 @@ onBeforeUnmount(() => {
 
 .qr-row.two-columns {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.qr-source-row {
+  grid-template-columns: 1fr;
+}
+
+.qr-source-row.with-text {
+  grid-template-columns: minmax(0, 30%) minmax(0, 70%);
+}
+
+.qr-source-mode,
+.qr-source-text {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .toggle-row {
@@ -2301,6 +2472,8 @@ onBeforeUnmount(() => {
 
   .background-grid,
   .custom-grid,
+  .model-item-row,
+  .qr-source-row.with-text,
   .qr-row.two-columns,
   .toggle-row,
   .item-line,

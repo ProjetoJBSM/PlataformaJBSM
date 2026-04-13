@@ -1,4 +1,4 @@
-import { getDownloadURL, getMetadata, listAll, ref, uploadBytes } from 'firebase/storage'
+import { deleteObject, getDownloadURL, getMetadata, listAll, ref, uploadBytes } from 'firebase/storage'
 
 import { storage } from './firebase'
 
@@ -75,28 +75,67 @@ function isStoragePermissionError(error) {
   return code === 'storage/unauthorized' || code === 'storage/unauthenticated'
 }
 
+function getUniqueModelName(baseName, models) {
+  const normalized = String(baseName || '').trim() || 'modelo-sem-nome'
+  const existingNames = new Set(
+    (models || [])
+      .map((item) => String(item?.name || '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+
+  if (!existingNames.has(normalized.toLowerCase())) {
+    return normalized
+  }
+
+  let suffix = 1
+  let candidate = `${normalized}_${suffix}`
+  while (existingNames.has(candidate.toLowerCase())) {
+    suffix += 1
+    candidate = `${normalized}_${suffix}`
+  }
+
+  return candidate
+}
+
 function upsertLocalModel(name, payload, updatedAt) {
   const current = readLocalModels()
-  const existingIndex = current.findIndex((item) => item?.name === name)
+  const uniqueName = getUniqueModelName(name, current)
+  const normalizedPayload = {
+    ...payload,
+    name: uniqueName,
+    updatedAt,
+  }
 
   const entry = toModelItem({
-    id: existingIndex >= 0
-      ? current[existingIndex].id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      : `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name,
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: uniqueName,
     storagePath: null,
     updatedAt,
-    model: payload,
+    model: normalizedPayload,
   })
-
-  if (existingIndex >= 0) {
-    current[existingIndex] = entry
-    writeLocalModels(sortModelsByDateDesc(current))
-    return entry
-  }
 
   writeLocalModels(sortModelsByDateDesc([entry, ...current]))
   return entry
+}
+
+function deleteLocalModel(modelItem) {
+  const current = readLocalModels()
+  const modelId = String(modelItem?.id || '')
+  const modelStoragePath = String(modelItem?.storagePath || '')
+
+  const filtered = current.filter((item) => {
+    if (modelId && String(item?.id || '') === modelId) {
+      return false
+    }
+
+    if (modelStoragePath && String(item?.storagePath || '') === modelStoragePath) {
+      return false
+    }
+
+    return true
+  })
+
+  writeLocalModels(filtered)
 }
 
 export async function listPlateModels() {
@@ -195,4 +234,28 @@ export async function savePlateModel(name, model) {
     updatedAt: nowIso,
     model: payload,
   })
+}
+
+export async function deletePlateModel(modelItem) {
+  if (!modelItem) {
+    return
+  }
+
+  const isLocal = !modelItem.storagePath || String(modelItem.id || '').startsWith('local-')
+  if (isLocal || !storage) {
+    deleteLocalModel(modelItem)
+    return
+  }
+
+  const fileRef = ref(storage, modelItem.storagePath)
+  try {
+    await deleteObject(fileRef)
+    deleteLocalModel(modelItem)
+  } catch (error) {
+    if (isStoragePermissionError(error)) {
+      throw new Error('Sem permissao para excluir este modelo no Storage.')
+    }
+
+    throw error
+  }
 }
