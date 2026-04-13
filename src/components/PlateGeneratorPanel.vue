@@ -1106,27 +1106,12 @@ async function handleModelFileUpload(event) {
 
   try {
     const parsed = JSON.parse(await file.text())
-    const importedName = parsed?.name || file.name.replace(/\.json$/i, '')
-    const uniqueName = getUniqueModelName(importedName)
-    modelName.value = uniqueName
+    const importedName = String(parsed?.name || file.name.replace(/\.json$/i, '')).trim() || `modelo-${Date.now()}`
+    modelName.value = importedName
+    selectedModelId.value = ''
 
     await applyModelPayload(parsed)
-    const saved = await savePlateModel(uniqueName, buildModelPayload())
-    await refreshStoredModels()
-
-    if (saved?.storagePath) {
-      if (uniqueName !== importedName) {
-        setStatus(`Modelo carregado e salvo como ${uniqueName} (nome ja existente).`)
-      } else {
-        setStatus(`Modelo ${uniqueName} carregado e salvo na plataforma.`)
-      }
-    } else {
-      if (uniqueName !== importedName) {
-        setStatus(`Modelo carregado e salvo localmente como ${uniqueName} (nome ja existente).`)
-      } else {
-        setStatus(`Modelo ${uniqueName} carregado e salvo localmente (sem permissao no Storage).`)
-      }
-    }
+    setStatus(`Modelo ${importedName} carregado no editor. Clique em "Salvar modelo na plataforma" para persistir.`)
   } catch (error) {
     setStatus(`Falha ao carregar modelo: ${error instanceof Error ? error.message : 'erro desconhecido'}`, true)
   } finally {
